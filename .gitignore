@@ -1,4 +1,19 @@
-.claude
+# dependencies
+node_modules/
 
+# secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+*.tsbuildinfo
+
+# editors / tooling
+.claude
 .idea
 .vscode
+
+# os
+.DS_Store

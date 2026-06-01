@@ -1,0 +1,74 @@
+[
+  {
+    "fixture_path": "evals/golden/malicious/curl-bash.json",
+    "expected_verdict": "MALICIOUS",
+    "expected_action": "BLOCK",
+    "notes": "postinstall fetches and executes a 2nd payload via curl|bash (curl_pipe_sh CRITICAL)"
+  },
+  {
+    "fixture_path": "evals/golden/malicious/solana-theft.json",
+    "expected_verdict": "MALICIOUS",
+    "expected_action": "BLOCK",
+    "notes": "hook source reads ~/.config/solana/id.json and exfiltrates it (solana_keypair CRITICAL)"
+  },
+  {
+    "fixture_path": "evals/golden/malicious/metamask-harvest.json",
+    "expected_verdict": "MALICIOUS",
+    "expected_action": "BLOCK",
+    "notes": "hook source accesses MetaMask Chrome extension storage by extension ID (metamask CRITICAL)"
+  },
+  {
+    "fixture_path": "evals/golden/malicious/phantom-harvest.json",
+    "expected_verdict": "MALICIOUS",
+    "expected_action": "BLOCK",
+    "notes": "hook source accesses Phantom wallet extension storage by extension ID (phantom CRITICAL)"
+  },
+  {
+    "fixture_path": "evals/golden/malicious/node-eval.json",
+    "expected_verdict": "SUSPICIOUS",
+    "expected_action": "QUARANTINE",
+    "notes": "postinstall uses node -e inline execution (node_dash_e HIGH — no CRITICAL → SUSPICIOUS)"
+  },
+  {
+    "fixture_path": "evals/golden/malicious/wallet-exfil.json",
+    "expected_verdict": "SUSPICIOUS",
+    "expected_action": "QUARANTINE",
+    "notes": "hook source reads wallet.dat and POSTs to evil.example.com (wallet_dat + outbound_http HIGH)"
+  },
+  {
+    "fixture_path": "evals/golden/safe/minimal.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": "bare package with no scripts, no hooks, no dependencies"
+  },
+  {
+    "fixture_path": "evals/golden/safe/with-test-script.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": "has a test script (jest) — not a lifecycle hook, does not run on install"
+  },
+  {
+    "fixture_path": "evals/golden/safe/with-deps.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": "has non-empty dependencies but no install hooks"
+  },
+  {
+    "fixture_path": "evals/golden/safe/with-build-script.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": "has build/test/lint scripts — none are lifecycle hooks"
+  },
+  {
+    "fixture_path": "evals/golden/safe/with-entrypoint.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": "CLI tool with main + bin entrypoints, no hooks"
+  },
+  {
+    "fixture_path": "evals/golden/safe/with-notable-file.json",
+    "expected_verdict": "SAFE",
+    "expected_action": "ALLOW",
+    "notes": ".env.example in notable_files → LOW finding only → SAFE/ALLOW"
+  }
+]

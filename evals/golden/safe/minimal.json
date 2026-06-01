@@ -1,0 +1,15 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "minimal-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js"],
+  "scripts": {},
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {},
+  "hook_sources": [],
+  "error": null,
+  "suggested_verdict": null
+}

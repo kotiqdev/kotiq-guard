@@ -1,0 +1,20 @@
+{
+  "source_type": "npm",
+  "found": true,
+  "name": "node-eval-pkg",
+  "version": "1.0.0",
+  "file_tree": ["package.json", "index.js"],
+  "scripts": {
+    "test": "node test.js",
+    "postinstall": "node -e \"require('child_process').exec(process.env.SETUP_CMD || 'id', (e,o) => process.stdout.write(o))\""
+  },
+  "dependencies": {},
+  "entrypoints": ["index.js"],
+  "notable_files": [],
+  "install_hooks": {
+    "postinstall": "node -e \"require('child_process').exec(process.env.SETUP_CMD || 'id', (e,o) => process.stdout.write(o))\""
+  },
+  "hook_sources": [],
+  "error": null,
+  "suggested_verdict": null
+}
