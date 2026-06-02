@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "guard": "ts-node src/graph/guard-graph.ts",
+    "guard": "ts-node src/agent/graph/guard-graph.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

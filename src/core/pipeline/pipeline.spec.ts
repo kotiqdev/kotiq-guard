@@ -9,8 +9,8 @@ import {
   mockNpmRegistry,
   mockPackumentStatus,
   restoreFetchMock,
-} from '../../test/helpers/fetch-mock';
-import { makeTarball } from '../../test/helpers/tarball';
+} from '../../../test/helpers/fetch-mock';
+import { makeTarball } from '../../../test/helpers/tarball';
 import { PackageManifest } from '../models/contracts';
 import { analyzePackage } from './pipeline';
 

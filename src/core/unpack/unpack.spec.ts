@@ -13,8 +13,8 @@ import {
   mockPackumentNetworkError,
   mockPackumentStatus,
   restoreFetchMock,
-} from '../../test/helpers/fetch-mock';
-import { makePackageJson, makeTarball } from '../../test/helpers/tarball';
+} from '../../../test/helpers/fetch-mock';
+import { makePackageJson, makeTarball } from '../../../test/helpers/tarball';
 import { Verdict } from '../models/enums';
 import { unpackNpm } from './unpack';
 

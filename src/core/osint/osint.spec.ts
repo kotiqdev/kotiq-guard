@@ -8,7 +8,7 @@ import {
   addMatcher,
   installFetchMock,
   restoreFetchMock,
-} from '../../test/helpers/fetch-mock';
+} from '../../../test/helpers/fetch-mock';
 import { checkDepsDev, checkOsv, checkTyposquat } from './osint';
 
 const OSV_LODASH_RESPONSE = {

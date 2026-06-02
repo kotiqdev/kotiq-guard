@@ -9,9 +9,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { PackageManifest } from '../src/models/contracts';
-import { aggregateFindings } from '../src/reporter/reporter';
-import { analyzeManifest } from '../src/static-analysis/static-analysis';
+import { PackageManifest } from '../src/core/models/contracts';
+import { aggregateFindings } from '../src/core/reporter/reporter';
+import { analyzeManifest } from '../src/core/static-analysis/static-analysis';
 
 const REPO_ROOT = resolve(__dirname, '..');
 const DEFAULT_EVAL_SET = join(REPO_ROOT, 'evals', 'eval_set.json');

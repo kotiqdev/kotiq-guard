@@ -5,11 +5,11 @@ import 'dotenv/config'; // loads .env into process.env — must run before anyth
 
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
-import { splitSpec } from '../cli/scan';
-import { debug } from '../logger';
+import { splitSpec } from '../../cli/scan';
+import { debug } from '../../logger';
 import { makeModel } from '../llm/model';
-import { VerdictCard } from '../models/contracts';
-import { analyzePackage } from '../pipeline/pipeline';
+import { VerdictCard } from '../../core/models/contracts';
+import { analyzePackage } from '../../core/pipeline/pipeline';
 
 // Graph state: shared channels the nodes read/write.
 const GuardState = Annotation.Root({

@@ -8,7 +8,7 @@
 //   2  MALICIOUS
 //   1  usage error
 
-import { analyzePackage } from '../pipeline/pipeline';
+import { analyzePackage } from '../core/pipeline/pipeline';
 
 export function splitSpec(spec: string): { name: string; version: string | null } {
   const trimmed = spec.trim();
