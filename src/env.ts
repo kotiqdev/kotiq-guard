@@ -9,6 +9,7 @@ const EnvSchema = z.object({
     OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),
     GOOGLE_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    PORT: z.coerce.number().default(8080),
 });
 
 const parsed = EnvSchema.parse(process.env);
@@ -20,6 +21,7 @@ export interface Env {
     ollamaBaseUrl: string;
     googleApiKey?: string;
     geminiModel: string;
+    port: number;
 }
 
 export const env: Env = {
@@ -29,4 +31,5 @@ export const env: Env = {
     ollamaBaseUrl: parsed.OLLAMA_BASE_URL,
     googleApiKey: parsed.GOOGLE_API_KEY,
     geminiModel: parsed.GEMINI_MODEL,
+    port: parsed.PORT,
 };
