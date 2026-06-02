@@ -48,7 +48,9 @@ ${JSON.stringify(v, null, 2)}
 In 2-3 short sentences of plain language: what this verdict means and what the developer should do. No markdown.`;
 
     debug('explain → calling LLM');
+    const started = Date.now();
     const res = await makeModel().invoke(prompt);
+    debug(`explain ← done (${Date.now() - started}ms)`);
     // qwen3 (Ollama) may wrap reasoning in <think>…</think>; strip it for a clean answer.
     const explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return { explanation };
