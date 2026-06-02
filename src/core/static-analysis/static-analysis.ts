@@ -45,11 +45,34 @@ export function analyzeManifest(manifest: PackageManifest | Record<string, unkno
   const m = manifest as PackageManifest;
   const findings: RiskFinding[] = [];
 
-  // 1) Declared install hooks. Even a benign hook is a flag because it runs automatically.
+  // 1) Declared install hooks. Base severity when the command has NO dangerous signature:
+  //      prepare → INFO: it does NOT run when the package is installed as a dependency from the
+  //        registry (only on the package's own local/git install), so for most consumers it never
+  //        executes.
+  //      preinstall/install/postinstall → LOW: these DO run on dependency install — worth a glance.
+  //    A dangerous §6 signature inside the command escalates to the signature's severity.
+  //    NOTE: for the "scan a cloned repo before `npm install`" use case, prepare DOES run — that
+  //    scenario should raise the prepare base severity (future local-scan mode).
   for (const [hookName, command] of Object.entries(m.install_hooks ?? {})) {
     const cmdHits = scan(command ?? '');
-    let baseSeverity: Severity = Severity.MEDIUM;
+    let baseSeverity: Severity = hookName === 'prepare' ? Severity.INFO : Severity.LOW;
     for (const hit of cmdHits) baseSeverity = maxSeverity(baseSeverity, hit.severity);
+
+    let explanation: string;
+    if (cmdHits.length > 0) {
+      explanation =
+        `npm runs \`${command}\` on install (${hookName}) and it matches a known malicious ` +
+        'pattern — Contagious-Interview / Lazarus malware hides payloads in install hooks.';
+    } else if (hookName === 'prepare') {
+      explanation =
+        'Declares a `prepare` script. Note: `prepare` does NOT run when this package is installed ' +
+        'as a dependency (only on local/git installs), so for most consumers it never executes.';
+    } else {
+      explanation =
+        `Declares a \`${hookName}\` script that npm runs automatically on install. No dangerous ` +
+        'pattern detected, but install hooks are where supply-chain malware hides — worth a glance.';
+    }
+
     findings.push(
       RiskFindingSchema.parse({
         category: 'install_hook',
@@ -58,9 +81,7 @@ export function analyzeManifest(manifest: PackageManifest | Record<string, unkno
         file: 'package.json',
         line: null,
         snippet: command,
-        explanation:
-          `npm will run \`${command}\` automatically on install (${hookName}). ` +
-          'Contagious-Interview / Lazarus malware hides its payload here.',
+        explanation,
       }),
     );
     for (const hit of cmdHits) findings.push(hitToFinding(hit, 'package.json'));

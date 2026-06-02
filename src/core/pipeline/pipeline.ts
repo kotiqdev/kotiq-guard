@@ -21,9 +21,14 @@ export async function analyzePackage(name: string, version: string | null = null
   // Static analysis needs the tarball; OSINT does not — run it regardless so a yanked malicious
   // version (event-stream@3.3.6, ua-parser-js@0.7.29) still surfaces its OSV advisory.
   const riskFindings = found ? analyzeManifest(manifest) : [];
+
+  // Use the resolved version (the one that will actually be installed) so OSV/deps.dev only report
+  // advisories that affect THAT version — like npm audit, not "every advisory the package ever had".
+  // Keep the caller's explicit version for yanked-but-known-bad pins (event-stream@3.3.6).
+  const resolvedVersion = found && manifest.version ? manifest.version : version;
   const [osv, depsdev, typosquat] = await Promise.all([
-    checkOsv(name, version),
-    checkDepsDev(name, version),
+    checkOsv(name, resolvedVersion),
+    checkDepsDev(name, resolvedVersion),
     Promise.resolve(checkTyposquat(name)),
   ]);
   const reputationFindings = [...osv, ...depsdev, ...typosquat];
@@ -37,8 +42,9 @@ export async function analyzePackage(name: string, version: string | null = null
       summary: `Package '${name}' could not be fetched and has no OSINT signal.`,
       top_findings: [],
       reputation: [],
+      scanned_version: resolvedVersion ?? null,
     };
   }
 
-  return aggregateFindings(riskFindings, reputationFindings);
+  return { ...aggregateFindings(riskFindings, reputationFindings), scanned_version: resolvedVersion ?? null };
 }

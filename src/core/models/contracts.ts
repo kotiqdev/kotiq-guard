@@ -64,5 +64,7 @@ export const VerdictCardSchema = z.object({
   summary: z.string(),
   top_findings: z.array(RiskFindingSchema).default([]),
   reputation: z.array(ReputationFindingSchema).default([]),
+  // The version the engine actually resolved and analyzed (latest, if no version was requested).
+  scanned_version: z.string().nullable().default(null),
 });
 export type VerdictCard = z.infer<typeof VerdictCardSchema>;
