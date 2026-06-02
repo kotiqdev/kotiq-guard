@@ -1,5 +1,6 @@
 // Kotiq Guard — LangGraph orchestration over the deterministic engine.
-// Graph: scan (deterministic verdict) → explain (LLM turns it into plain language).
+// Graph: scan → (explain | END). The LLM explain step is skipped when withExplanation=false
+// so the caller (e.g. the badge) gets an instant deterministic verdict.
 
 
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
@@ -13,6 +14,7 @@ import { analyzePackage } from '../../core/pipeline/pipeline';
 // Graph state: shared channels the nodes read/write.
 const GuardState = Annotation.Root({
     packageName: Annotation<string>(),
+    withExplanation: Annotation<boolean>(),
     verdict: Annotation<VerdictCard | null>(),
     explanation: Annotation<string>(),
 });
@@ -56,11 +58,16 @@ In 2-3 short sentences of plain language: what this verdict means and what the d
     return { explanation };
 }
 
+// Router after scan: skip the LLM explanation when the caller only wants the fast verdict.
+function afterScan(state: typeof GuardState.State): 'explain' | typeof END {
+    return state.withExplanation === false ? END : 'explain';
+}
+
 export const guardGraph = new StateGraph(GuardState)
     .addNode('scan', scanNode)
     .addNode('explain', explainNode)
     .addEdge(START, 'scan')
-    .addEdge('scan', 'explain')
+    .addConditionalEdges('scan', afterScan)
     .addEdge('explain', END)
     .compile();
 
