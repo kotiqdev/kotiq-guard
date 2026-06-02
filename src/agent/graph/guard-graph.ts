@@ -1,7 +1,6 @@
 // Kotiq Guard — LangGraph orchestration over the deterministic engine.
 // Graph: scan (deterministic verdict) → explain (LLM turns it into plain language).
 
-import 'dotenv/config'; // loads .env into process.env — must run before anything reads env
 
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
