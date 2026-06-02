@@ -30,7 +30,7 @@ async function start(): Promise<void> {
     app.get('/health', async () => ({ ok: true }));
 
     // GET /scan?pkg=event-stream@3.3.6  →  VerdictCard + explanation
-    app.get<{ Querystring: { pkg: string } }>(
+    app.get<{ Querystring: { pkg: string; from?: string } }>(
         '/scan',
         {
             schema: {
@@ -40,13 +40,14 @@ async function start(): Promise<void> {
                     required: ['pkg'],
                     properties: {
                         pkg: { type: 'string', description: 'npm package, e.g. "event-stream@3.3.6"' },
+                        from: { type: 'string', description: 'page URL the scan was triggered from (for logs)' },
                     },
                 },
             },
         },
         async (req) => {
             const pkg = req.query.pkg.trim();
-            debug('GET /scan', pkg);
+            debug('GET /scan', pkg, req.query.from ? `from ${req.query.from}` : '');
             const result = await guardGraph.invoke({ packageName: pkg });
             return { ...result.verdict, explanation: result.explanation };
         },
