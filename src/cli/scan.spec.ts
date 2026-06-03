@@ -4,11 +4,11 @@
 // The CLI delegates to `analyzePackage`. We mock that module to keep the test deterministic and
 // offline.
 
-jest.mock('../pipeline/pipeline', () => ({
+jest.mock('../core/pipeline/pipeline', () => ({
   analyzePackage: jest.fn(),
 }));
 
-const { analyzePackage } = require('../pipeline/pipeline') as {
+const { analyzePackage } = require('../core/pipeline/pipeline') as {
   analyzePackage: jest.Mock;
 };
 

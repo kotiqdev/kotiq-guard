@@ -4,10 +4,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { EvalEntry, runEval } from '../evals/run-eval';
-import { PackageManifest } from '../src/models/contracts';
-import { aggregateFindings } from '../src/reporter/reporter';
-import { analyzeManifest } from '../src/static-analysis/static-analysis';
-import { scan } from '../src/static-analysis/web3-signatures';
+import { PackageManifest } from '../src/core/models/contracts';
+import { aggregateFindings } from '../src/core/reporter/reporter';
+import { analyzeManifest } from '../src/core/static-analysis/static-analysis';
+import { scan } from '../src/core/static-analysis/web3-signatures';
 
 const REPO = resolve(__dirname, '..');
 const SAFE_DIR = join(REPO, 'evals', 'golden', 'safe');

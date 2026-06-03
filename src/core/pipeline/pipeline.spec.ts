@@ -14,7 +14,7 @@ import { makeTarball } from '../../../test/helpers/tarball';
 import { PackageManifest } from '../models/contracts';
 import { analyzePackage } from './pipeline';
 
-const REPO_ROOT = resolve(__dirname, '../..');
+const REPO_ROOT = resolve(__dirname, '../../..');
 const SAFE_MANIFEST = JSON.parse(
   readFileSync(join(REPO_ROOT, 'evals/golden/safe/minimal.json'), 'utf8'),
 ) as PackageManifest;

@@ -69,11 +69,13 @@ test('AC-2: malicious hook sources yield crypto_theft findings at HIGH/CRITICAL'
   expect(files.has('scripts/install.js')).toBe(true);
 });
 
-test('AC-2: declared install hook is always flagged at MEDIUM when command is benign', () => {
+test('AC-2: a declared (non-prepare) install hook with a benign command is flagged at LOW', () => {
+  // Proportionate severity: a hook that DOES run on dependency install but looks benign is LOW
+  // (real danger escalates via signatures); only `prepare` — which never runs for deps — is INFO.
   const findings = analyzeManifest(maliciousManifest());
   const installHooks = findings.filter((f) => f.category === 'install_hook');
   expect(installHooks.length).toBeGreaterThan(0);
-  expect(installHooks[0].severity).toBe('MEDIUM');
+  expect(installHooks[0].severity).toBe('LOW');
 });
 
 test('AC-2: clean manifest yields no findings', () => {
