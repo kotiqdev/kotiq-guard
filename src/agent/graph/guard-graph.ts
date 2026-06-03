@@ -1,13 +1,15 @@
 // Kotiq Guard — LangGraph orchestration over the deterministic engine.
 //
-// Graph:  scan → (END | security ⇄ critic → explain)
+// Graph:  scan → (END | security ⇄ critic → decide → explain)
 //   scan      — deterministic verdict (the trustworthy floor). Fast; runs always.
 //   security  — LLM reads the install-hook command + source and judges WHAT it actually does.
 //               Escalate-only: it can raise concern, never lower the deterministic verdict.
 //   critic    — checks the security judgment is grounded in the real scripts (no hallucination).
-//               If not, it sends the analysis back to `security` to reconsider (≤3 tries), then a
-//               conservative fallback. This is a self-correcting cycle.
-//   explain   — turns verdict + (validated) security note into plain language for the user.
+//               If not, sends it back to `security` to reconsider (≤3 tries), then a conservative
+//               fallback. A self-correcting cycle.
+//   decide    — escalate-only: bumps the verdict by the (validated) security level (SAFE→SUSPICIOUS),
+//               never to MALICIOUS, never lower.
+//   explain   — turns the effective verdict + security note into plain language for the user.
 // withExplanation=false → stop after scan (instant deterministic badge, no LLM).
 
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
@@ -16,6 +18,7 @@ import { splitSpec } from '../../cli/scan';
 import { debug } from '../../logger';
 import { makeModel } from '../llm/model';
 import { HookSource, VerdictCard } from '../../core/models/contracts';
+import { Action, Verdict } from '../../core/models/enums';
 import { analyzeWithContext } from '../../core/pipeline/pipeline';
 
 type SecurityLevel = 'ok' | 'warn' | 'alert';
@@ -33,6 +36,8 @@ const GuardState = Annotation.Root({
     securityAttempts: Annotation<number>(),
     criticPass: Annotation<boolean>(),
     criticIssue: Annotation<string>(),
+    effectiveVerdict: Annotation<VerdictCard['verdict']>(),
+    effectiveAction: Annotation<VerdictCard['recommended_action']>(),
     explanation: Annotation<string>(),
 });
 
@@ -164,22 +169,60 @@ Respond with ONLY this JSON: {"ok":true|false,"issue":"<short, empty if ok>"}`;
     return { criticPass: false, criticIssue: issue };
 }
 
-// ── Node: explain the verdict (+ validated security note) in plain language ──────────────────────
+// Escalate-only: the LLM agents may raise a clean/unknown verdict up to SUSPICIOUS, never to
+// MALICIOUS (reserved for deterministic CRITICAL), never lower an already-higher verdict.
+function escalate(
+    verdict: VerdictCard['verdict'],
+    action: VerdictCard['recommended_action'],
+    level: SecurityLevel | undefined,
+): { verdict: VerdictCard['verdict']; action: VerdictCard['recommended_action'] } {
+    if ((level !== 'warn' && level !== 'alert') || (verdict !== 'SAFE' && verdict !== 'NEEDS_REVIEW')) {
+        return { verdict, action };
+    }
+    return { verdict: Verdict.SUSPICIOUS, action: level === 'alert' ? Action.QUARANTINE : Action.ALLOW_WITH_WARNING };
+}
+
+// ── Node: decide the EFFECTIVE verdict from engine + (validated) security level ──────────────────
+async function decideNode(state: State): Promise<Partial<State>> {
+    const v = state.verdict;
+    if (!v) return {};
+    const { verdict, action } = escalate(v.verdict, v.recommended_action, state.securityLevel);
+    if (verdict !== v.verdict) debug('escalate:', v.verdict, '→', verdict, `(security=${state.securityLevel})`);
+    return { effectiveVerdict: verdict, effectiveAction: action };
+}
+
+// ── Node: explain the effective verdict (+ validated security note) in plain language ────────────
 async function explainNode(state: State): Promise<Partial<State>> {
     const v = state.verdict;
     if (!v) return {};
 
+    const hooks = state.installHooks ?? {};
+    const sources = state.hookSources ?? [];
+    const effective = state.effectiveVerdict ?? v.verdict;
+    const escalated = effective !== v.verdict;
+
+    const hooksLine = Object.keys(hooks).length
+        ? `Install hooks it declares: ${JSON.stringify(hooks)}. Kotiq ${
+              sources.length
+                  ? `READ the source of these hook scripts: ${sources.map((s) => s.path).join(', ')}`
+                  : 'could NOT read any hook script source (none were shipped in the package)'
+          }.`
+        : 'It declares no install hooks.';
+
     const securityLine =
         state.securityLevel && state.securityLevel !== 'ok'
-            ? `\nA security analysis of its install hooks raised: ${state.securityLevel.toUpperCase()} — "${state.securityNote}". Mention this.`
+            ? `Security review of the hooks: ${state.securityLevel.toUpperCase()} — "${state.securityNote}".${escalated ? ` Because of this it is flagged ${effective} even though the deterministic scan alone was ${v.verdict}.` : ''}`
             : '';
 
-    const prompt = `You are a security assistant for developers. A developer asked whether the npm package "${state.packageName}" is safe to install.
-Here is a deterministic scan result — do NOT change the verdict, only explain it:
+    const prompt = `You are a security assistant for developers. A developer asked whether the npm package "${state.packageName}" is safe to install. Overall verdict: ${effective}.
 
-${JSON.stringify(v, null, 2)}${securityLine}
+Deterministic scan detail:
+${JSON.stringify(v, null, 2)}
 
-In 2-3 short sentences of plain language: what this verdict means and what the developer should do. No markdown.`;
+${hooksLine}
+${securityLine}
+
+Write 3-4 short, transparent sentences: name which install hooks exist (if any), state clearly whether Kotiq could read their script source or not, what the check concluded, and what the developer should do. Do NOT lower the verdict. No markdown.`;
 
     debug('explain → calling LLM');
     const started = Date.now();
@@ -194,19 +237,21 @@ function afterScan(state: State): 'security' | typeof END {
     return state.withExplanation === false ? END : 'security';
 }
 
-function afterCritic(state: State): 'security' | 'explain' {
-    return state.criticPass ? 'explain' : 'security';
+function afterCritic(state: State): 'security' | 'decide' {
+    return state.criticPass ? 'decide' : 'security';
 }
 
 export const guardGraph = new StateGraph(GuardState)
     .addNode('scan', scanNode)
     .addNode('security', securityNode)
     .addNode('critic', criticNode)
+    .addNode('decide', decideNode)
     .addNode('explain', explainNode)
     .addEdge(START, 'scan')
     .addConditionalEdges('scan', afterScan)
     .addEdge('security', 'critic')
     .addConditionalEdges('critic', afterCritic)
+    .addEdge('decide', 'explain')
     .addEdge('explain', END)
     .compile();
 
@@ -224,6 +269,12 @@ if (require.main === module) {
             const out = result.verdict
                 ? {
                       ...result.verdict,
+                      effective_verdict: result.effectiveVerdict ?? result.verdict.verdict,
+                      effective_action: result.effectiveAction ?? result.verdict.recommended_action,
+                      scripts: {
+                          hooks: result.installHooks ?? {},
+                          readable: (result.hookSources ?? []).map((s) => s.path),
+                      },
                       security: { level: result.securityLevel, note: result.securityNote },
                       explanation: result.explanation,
                   }

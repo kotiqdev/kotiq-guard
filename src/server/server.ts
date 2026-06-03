@@ -55,6 +55,13 @@ async function start(): Promise<void> {
             debug(`/scan ← total ${Date.now() - t0}ms ·`, pkg, result.verdict?.verdict ?? '?');
             return {
                 ...result.verdict,
+                ...(result.effectiveVerdict
+                    ? { effective_verdict: result.effectiveVerdict, effective_action: result.effectiveAction }
+                    : {}),
+                scripts: {
+                    hooks: result.installHooks ?? {},
+                    readable: (result.hookSources ?? []).map((s) => s.path),
+                },
                 ...(result.securityLevel ? { security: { level: result.securityLevel, note: result.securityNote } } : {}),
                 explanation: result.explanation,
             };
