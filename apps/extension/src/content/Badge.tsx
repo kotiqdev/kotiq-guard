@@ -9,19 +9,39 @@ const COLORS: Record<string, string> = {
     NEEDS_REVIEW: '#6e7781',
 };
 
-type Verdict = {
+// Matrix-style "Explain with AI" button: dark grey, glowing green text; brighter on hover, flashes on click.
+const BTN_CSS = `
+.kotiq-explain {
+  width: 100%; padding: 8px 14px; border: 1px solid #00ff41; border-radius: 6px;
+  background: #2a2a2a; color: #00ff41;
+  font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .3px;
+  text-shadow: 0 0 6px rgba(0,255,65,.45); cursor: pointer;
+  transition: background .15s, box-shadow .15s, text-shadow .15s, color .15s, transform .05s;
+}
+.kotiq-explain:hover {
+  background: #333; border-color: #5bff86; color: #5bff86;
+  text-shadow: 0 0 10px rgba(0,255,65,.9); box-shadow: 0 0 12px rgba(0,255,65,.35);
+}
+.kotiq-explain:active { transform: scale(.98); background: #00ff41; color: #08240f; text-shadow: none; }
+.kotiq-explain:disabled { cursor: default; opacity: .6; box-shadow: none; text-shadow: none; }
+.kotiq-explain.loading { border-color: #ff5f56; color: #ff7b73; text-shadow: 0 0 6px rgba(255,95,86,.5); }
+.kotiq-explain.loading:hover { background: #3a2a2a; box-shadow: 0 0 12px rgba(255,95,86,.4); }
+`;
+
+type ScanResult = {
     verdict: string;
+    effective_verdict?: string;
     summary?: string;
     explanation?: string;
     scanned_version?: string | null;
+    scripts?: { hooks?: Record<string, string>; readable?: string[] };
+    security?: { level?: string; note?: string };
 };
 
 // The exact version the user is viewing: from the /v/<version> URL, else npm's embedded page data.
 function versionFromPage(): string | null {
     const u = location.pathname.match(/\/v\/([^/]+)/);
     if (u) return decodeURIComponent(u[1]);
-    // npm embeds page data as `window.__context__` in a <script> tag; a content script can't read
-    // the page's JS, but it CAN read the script tag's text from the DOM.
     for (const s of Array.from(document.querySelectorAll('script'))) {
         const m = (s.textContent ?? '').match(/"packageVersion":\{[\s\S]*?"version":"([^"]+)"/);
         if (m) return m[1];
@@ -43,14 +63,15 @@ const from = encodeURIComponent(location.href);
 export function Badge() {
     const [pkg] = useState(packageSpecFromPage());
     const [pageVersion] = useState(versionFromPage());
-    const [data, setData] = useState<Verdict | null>(null);
+    const [data, setData] = useState<ScanResult | null>(null); // fast deterministic scan
+    const [full, setFull] = useState<ScanResult | null>(null); // after "Explain" (LLM agents)
+    const [loading, setLoading] = useState(false);
+    const [controller, setController] = useState<AbortController | null>(null);
     const [open, setOpen] = useState(false);
-    const [explanation, setExplanation] = useState('');
     const [showVersionInfo, setShowVersionInfo] = useState(false);
 
     useEffect(() => {
         if (!pkg) return;
-        // Fast path: deterministic verdict only (no LLM).
         fetch(`${SERVER}/scan?pkg=${encodeURIComponent(pkg)}&explain=false&from=${from}`)
             .then((r) => r.json())
             .then(setData)
@@ -58,26 +79,48 @@ export function Badge() {
     }, [pkg]);
 
     if (!pkg || !data) return null;
-    const color = COLORS[data.verdict] ?? '#6e7781';
 
-    // Prefer the version read off the page; otherwise fall back to whatever the engine resolved.
+    // Badge reflects the effective verdict (security can escalate it once we've run the agents).
+    const shown = full?.effective_verdict ?? data.verdict;
+    const color = COLORS[shown] ?? '#6e7781';
+
     const version = pageVersion ?? data.scanned_version ?? null;
     const isFallback = !pageVersion && !!data.scanned_version;
 
+    const scripts = (full ?? data).scripts;
+    const hookNames = scripts?.hooks ? Object.keys(scripts.hooks) : [];
+    const readable = scripts?.readable ?? [];
+    const sec = full?.security;
+
     async function explain() {
-        setExplanation('Thinking…');
+        const ctrl = new AbortController();
+        setController(ctrl);
+        setLoading(true);
         try {
-            const full: Verdict = await fetch(
+            const res: ScanResult = await fetch(
                 `${SERVER}/scan?pkg=${encodeURIComponent(pkg!)}&from=${from}`,
+                { signal: ctrl.signal },
             ).then((r) => r.json());
-            setExplanation(full.explanation || full.summary || '(no explanation)');
-        } catch {
-            setExplanation('Could not reach the server.');
+            setFull(res);
+        } catch (e) {
+            if ((e as Error).name !== 'AbortError') {
+                setFull({ verdict: data!.verdict, explanation: 'Could not reach the server.' });
+            }
+        } finally {
+            setLoading(false);
+            setController(null);
         }
     }
 
+    function cancel() {
+        controller?.abort();
+    }
+
+    const panel = { padding: '10px 12px', borderBottom: '1px solid #eaeef2' } as const;
+
     return (
         <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
+            <style>{BTN_CSS}</style>
             <div
                 onClick={() => setOpen((o) => !o)}
                 title={data.summary}
@@ -91,7 +134,7 @@ export function Badge() {
                     boxShadow: '0 2px 8px rgba(0,0,0,.2)',
                 }}
             >
-                🐱 Kotiq: {data.verdict}
+                🐱 Kotiq: {shown}
                 {version && (
                     <span style={{ marginLeft: 6, fontWeight: 400, opacity: isFallback ? 0.55 : 0.85 }}>
                         · {version}
@@ -99,7 +142,7 @@ export function Badge() {
                             <span
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    setShowVersionInfo((v) => !v);
+                                    setShowVersionInfo((s) => !s);
                                 }}
                                 title="Version resolved by Kotiq, not read from the page"
                                 style={{ marginLeft: 4, cursor: 'help' }}
@@ -115,7 +158,7 @@ export function Badge() {
                 <div
                     style={{
                         marginTop: 6,
-                        width: 320,
+                        width: 340,
                         background: '#fff',
                         color: '#57606a',
                         border: '1px solid #d0d7de',
@@ -125,8 +168,8 @@ export function Badge() {
                         lineHeight: 1.45,
                     }}
                 >
-                    Couldn't read the version from this page — showing <b>{version}</b>, the version Kotiq's
-                    engine resolved and scanned.
+                    Couldn't read the version from this page — showing <b>{version}</b>, the version Kotiq's engine
+                    resolved and scanned.
                 </div>
             )}
 
@@ -134,7 +177,7 @@ export function Badge() {
                 <div
                     style={{
                         marginTop: 6,
-                        width: 320,
+                        width: 340,
                         background: '#fff',
                         color: '#24292f',
                         border: '1px solid #d0d7de',
@@ -143,14 +186,44 @@ export function Badge() {
                         overflow: 'hidden',
                     }}
                 >
-                    <div
-                        onClick={explain}
-                        style={{ padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #eaeef2' }}
-                    >
-                        🤖 Explain with AI
+                    {/* Install hooks (from the instant deterministic scan) */}
+                    <div style={{ ...panel, color: '#57606a' }}>
+                        {hookNames.length ? (
+                            <>
+                                <b>Install hooks:</b> {hookNames.join(', ')}
+                                <div style={{ fontSize: 12, marginTop: 2 }}>
+                                    {readable.length
+                                        ? `script source read: ${readable.join(', ')}`
+                                        : 'script source not shipped — Kotiq could not read it'}
+                                </div>
+                            </>
+                        ) : (
+                            'No install hooks declared.'
+                        )}
                     </div>
-                    <div style={{ padding: '10px 12px', color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                        {explanation || 'Pick an action above, or click the badge to close.'}
+
+                    {/* Security agent escalation (after Explain) */}
+                    {sec?.level && sec.level !== 'ok' && (
+                        <div style={{ ...panel, color: COLORS.SUSPICIOUS, fontWeight: 600 }}>
+                            ⚠ Security review: {sec.level.toUpperCase()}
+                            <div style={{ fontWeight: 400, fontSize: 12, marginTop: 2 }}>{sec.note}</div>
+                        </div>
+                    )}
+
+                    {/* AI explanation */}
+                    <div style={{ padding: '10px 12px' }}>
+                        <button
+                            type="button"
+                            className={`kotiq-explain${loading ? ' loading' : ''}`}
+                            onClick={loading ? cancel : explain}
+                        >
+                            {loading ? '✕ Cancel — Thinking…' : full ? '🤖 Re-explain with AI' : '🤖 Explain with AI'}
+                        </button>
+                        {full?.explanation && (
+                            <div style={{ marginTop: 10, color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                                {full.explanation}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
