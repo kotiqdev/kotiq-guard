@@ -1,0 +1,38 @@
+# CI — runs on every PR and on pushes to develop/main. No cloud, no secrets: pure quality gate.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npx jest --ci
+
+      - name: Build
+        run: npm run build
+
+      # Make sure the production image still builds — catches Dockerfile/asset breakage in PRs.
+      - name: Validate Docker image builds
+        run: docker build -t kotiq-guard:ci .

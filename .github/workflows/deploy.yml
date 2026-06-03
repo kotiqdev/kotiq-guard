@@ -1,0 +1,78 @@
+# Deploy — on push to develop (→ dev service) or main (→ prod service).
+# Auth to GCP is KEYLESS via Workload Identity Federation (no JSON key in GitHub).
+#
+# Stays dormant until the repo variable WIF_PROVIDER is set (filled from Terraform outputs in
+# Stage 4). Until then the job is skipped, so there are no red runs before the infra exists.
+#
+# Required repo Variables (Settings → Secrets and variables → Actions → Variables):
+#   WIF_PROVIDER      full provider resource, e.g. projects/123/locations/global/workloadIdentityPools/gh/providers/gh
+#   DEPLOYER_SA       deployer service-account email
+#   RUNTIME_SA        Cloud Run runtime service-account email (only roles/aiplatform.user)
+#   GCP_PROJECT_ID    project id
+#   AR_REPO           Artifact Registry repo name (e.g. "containers")
+#   OAUTH_CLIENT_ID   Google OAuth client id (becomes the token `aud`)
+#   ALLOWED_EMAILS    comma-separated allow-list
+#   ALLOWED_DOMAINS   comma-separated verified Workspace domains
+name: Deploy
+
+on:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  id-token: write # required: lets the job mint an OIDC token for Workload Identity Federation
+
+env:
+  REGION: europe-west1
+
+jobs:
+  deploy:
+    # Dormant until WIF is configured.
+    if: ${{ vars.WIF_PROVIDER != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Branch → environment: main is prod, anything else (develop) is dev.
+      - name: Resolve environment
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "service=kotiq-guard" >> "$GITHUB_OUTPUT"
+          else
+            echo "service=kotiq-guard-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push image
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/kotiq-guard:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        # ^##^ custom delimiter so commas inside ALLOWED_EMAILS/DOMAINS don't split the var list.
+        run: |
+          gcloud run deploy ${{ steps.env.outputs.service }} \
+            --image "$IMAGE" \
+            --region ${{ env.REGION }} \
+            --service-account ${{ vars.RUNTIME_SA }} \
+            --allow-unauthenticated \
+            --max-instances 2 \
+            --set-env-vars "^##^LLM_PROVIDER=vertex##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ vars.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ vars.ALLOWED_DOMAINS }}"
+
+      - name: Show URL
+        run: gcloud run services describe ${{ steps.env.outputs.service }} --region ${{ env.REGION }} --format='value(status.url)'
