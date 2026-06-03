@@ -9,7 +9,10 @@
   "scripts": {
     "guard": "ts-node src/agent/graph/guard-graph.ts",
     "serve": "ts-node src/server/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && npm run copy:assets",
+    "copy:assets": "cp src/agent/agents.yml dist/agent/agents.yml",
+    "start": "node dist/server/server.js"
   },
   "dependencies": {
     "@fastify/swagger": "^9.7.0",
