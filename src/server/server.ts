@@ -3,6 +3,8 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
+import { isAllowed } from '../auth/access';
+import { verifyIdToken } from '../auth/verify';
 import { env } from '../env';
 import { debug } from '../logger';
 
@@ -13,7 +15,32 @@ async function start(): Promise<void> {
     app.addHook('onRequest', async (_req, reply) => {
         reply.header('Access-Control-Allow-Origin', '*');
         reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     });
+
+    // Auth gate. When enabled, every request (except /health and CORS preflight) must carry a
+    // valid Google ID token whose verified identity is on the allow-list. Verification checks the
+    // token's SIGNATURE — a client cannot forge email/hd. Disabled locally so dev/curl just works.
+    if (env.authEnabled) {
+        if (!env.oauthClientId) throw new Error('AUTH_ENABLED is set but GOOGLE_OAUTH_CLIENT_ID is missing');
+        app.addHook('onRequest', async (req, reply) => {
+            if (req.method === 'OPTIONS' || req.url === '/health') return;
+            const header = req.headers.authorization ?? '';
+            const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+            if (!token) return reply.code(401).send({ error: 'missing bearer token' });
+            try {
+                const id = await verifyIdToken(token, env.oauthClientId as string);
+                if (!isAllowed(id, env.allowedEmails, env.allowedDomains)) {
+                    debug('auth ✕ forbidden ·', id.email);
+                    return reply.code(403).send({ error: 'not allowed' });
+                }
+                debug('auth ✓', id.email);
+            } catch (e) {
+                debug('auth ✕ invalid token ·', (e as Error).message);
+                return reply.code(401).send({ error: 'invalid token' });
+            }
+        });
+    }
 
     // OpenAPI spec + interactive Swagger UI at /docs.
     await app.register(swagger, {
