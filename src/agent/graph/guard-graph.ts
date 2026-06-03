@@ -18,13 +18,14 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { splitSpec } from '../../cli/scan';
 import { debug } from '../../logger';
 import { makeModel } from '../llm/model';
+import { agents, render } from '../prompts';
 import { HookSource, VerdictCard } from '../../core/models/contracts';
 import { Action, Verdict } from '../../core/models/enums';
 import { analyzeWithContext } from '../../core/pipeline/pipeline';
 
 type SecurityLevel = 'ok' | 'warn' | 'alert';
 
-const MAX_SECURITY_TRIES = 3;
+const MAX_SECURITY_TRIES = agents.critic.maxTries ?? 3;
 
 const GuardState = Annotation.Root({
     packageName: Annotation<string>(),
@@ -94,27 +95,16 @@ async function securityNode(state: State, config?: RunnableConfig): Promise<Part
         ? `\n\nA reviewer flagged your previous analysis: "${state.criticIssue}". Reconsider carefully and correct it.`
         : '';
 
-    const prompt = `You are a security analyst. A developer is about to add the npm package "${state.packageName}" as a DEPENDENCY. Judge ONLY its install hooks.
-
-Install hooks (hookName: command):
-${JSON.stringify(hooks, null, 2)}
-
-Source of hook scripts we could read from the package tarball:
-${renderSources(sources)}
-
-Rules:
-- preinstall / install / postinstall RUN automatically on a dependency install. "prepare" does NOT run for dependency installs (only the package's own local/git install).
-- You can only RAISE concern, never lower it.
-- "alert": a hook that runs on dependency install fetches/executes remote code, reads sensitive paths (~/.ssh, ~/.config/solana, wallet, keystore, .env), uses obfuscation/eval, or exfiltrates data.
-- "warn": a hook that runs on dependency install calls a script we could NOT read (genuine uncertainty), or looks suspicious but unclear.
-- "ok": only benign build tooling (tsc/build/husky setup), or the only hook is "prepare" (won't run for dependencies), or no real concern.${retryNote}
-
-Respond with ONLY this JSON, nothing else:
-{"level":"ok"|"warn"|"alert","reason":"<one short sentence>"}`;
+    const prompt = render(agents.security.prompt, {
+        packageName: state.packageName,
+        hooks: JSON.stringify(hooks, null, 2),
+        sources: renderSources(sources),
+        retryNote,
+    });
 
     debug('security → analyzing', Object.keys(hooks).length, 'hook(s),', sources.length, 'readable source(s)', `(attempt ${attempt})`);
     const started = Date.now();
-    const res = await makeModel().invoke(prompt, config);
+    const res = await makeModel(agents.security.temperature).invoke(prompt, config);
     debug(`security ← done (${Date.now() - started}ms)`);
 
     const obj = extractJson(String(res.content));
@@ -129,26 +119,16 @@ async function criticNode(state: State, config?: RunnableConfig): Promise<Partia
     const hooks = state.installHooks ?? {};
     if (Object.keys(hooks).length === 0) return { criticPass: true };
 
-    const prompt = `You verify a security analyst's judgment about an npm package's install hooks. Your ONLY job: check the judgment is GROUNDED in the actual hook data below — i.e. it does not invent scripts/paths/behavior that aren't present, and does not contradict the visible command/source.
-
-Do NOT re-argue npm lifecycle facts — these are GIVEN and correct, do not flag a judgment for relying on them:
-- preinstall / install / postinstall RUN on a dependency install.
-- "prepare" does NOT run for dependency installs (only the package's own local/git install).
-
-Install hooks:
-${JSON.stringify(hooks, null, 2)}
-
-Readable hook sources:
-${renderSources(state.hookSources ?? [])}
-
-The analyst concluded: level="${state.securityLevel}", reason="${state.securityNote}".
-
-Flag (ok:false) ONLY if the reason references something not present in the data, or contradicts the visible scripts. A statement consistent with the data and the lifecycle facts above is grounded → ok:true.
-Respond with ONLY this JSON: {"ok":true|false,"issue":"<short, empty if ok>"}`;
+    const prompt = render(agents.critic.prompt, {
+        hooks: JSON.stringify(hooks, null, 2),
+        sources: renderSources(state.hookSources ?? []),
+        securityLevel: String(state.securityLevel),
+        securityNote: String(state.securityNote),
+    });
 
     debug('critic → calling LLM');
     const t0 = Date.now();
-    const res = await makeModel().invoke(prompt, config);
+    const res = await makeModel(agents.critic.temperature).invoke(prompt, config);
     debug(`critic ← done (${Date.now() - t0}ms)`);
     const obj = extractJson(String(res.content));
     const ok = obj?.ok !== false; // can't parse / not explicitly false → don't block
@@ -215,19 +195,17 @@ async function explainNode(state: State, config?: RunnableConfig): Promise<Parti
             ? `Security review of the hooks: ${state.securityLevel.toUpperCase()} — "${state.securityNote}".${escalated ? ` Because of this it is flagged ${effective} even though the deterministic scan alone was ${v.verdict}.` : ''}`
             : '';
 
-    const prompt = `You are a security assistant for developers. A developer asked whether the npm package "${state.packageName}" is safe to install. Overall verdict: ${effective}.
-
-Deterministic scan detail:
-${JSON.stringify(v, null, 2)}
-
-${hooksLine}
-${securityLine}
-
-Write 3-4 short, transparent sentences: name which install hooks exist (if any), state clearly whether Kotiq could read their script source or not, what the check concluded, and what the developer should do. Do NOT lower the verdict. No markdown.`;
+    const prompt = render(agents.explain.prompt, {
+        packageName: state.packageName,
+        effective,
+        verdictJson: JSON.stringify(v, null, 2),
+        hooksLine,
+        securityLine,
+    });
 
     debug('explain → calling LLM');
     const started = Date.now();
-    const res = await makeModel().invoke(prompt, config);
+    const res = await makeModel(agents.explain.temperature).invoke(prompt, config);
     debug(`explain ← done (${Date.now() - started}ms)`);
     const explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return { explanation };
