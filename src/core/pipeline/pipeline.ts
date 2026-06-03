@@ -8,13 +8,22 @@
 // Safety: passive read-only. Never executes install scripts or package code, never writes the
 // package to disk, never spawns a subprocess.
 
-import { unpackNpm } from '../unpack/unpack';
-import { VerdictCard } from '../models/contracts';
+import { HookSource, VerdictCard } from '../models/contracts';
 import { checkDepsDev, checkOsv, checkTyposquat } from '../osint/osint';
 import { aggregateFindings } from '../reporter/reporter';
 import { analyzeManifest } from '../static-analysis/static-analysis';
+import { unpackNpm } from '../unpack/unpack';
 
-export async function analyzePackage(name: string, version: string | null = null): Promise<VerdictCard> {
+// Deterministic verdict + the raw install-hook context, so a downstream agent can reason about
+// WHAT the hooks actually do (beyond the signature scan). `hookSources` is the source of any local
+// script the hook runs, if it was shipped in the tarball.
+export type ScanResult = {
+  card: VerdictCard;
+  installHooks: Record<string, string>; // hookName → command string
+  hookSources: HookSource[]; // { path, content }
+};
+
+export async function analyzeWithContext(name: string, version: string | null = null): Promise<ScanResult> {
   const manifest = await unpackNpm(name, version);
   const found = Boolean(manifest.found);
 
@@ -24,7 +33,6 @@ export async function analyzePackage(name: string, version: string | null = null
 
   // Use the resolved version (the one that will actually be installed) so OSV/deps.dev only report
   // advisories that affect THAT version — like npm audit, not "every advisory the package ever had".
-  // Keep the caller's explicit version for yanked-but-known-bad pins (event-stream@3.3.6).
   const resolvedVersion = found && manifest.version ? manifest.version : version;
   const [osv, depsdev, typosquat] = await Promise.all([
     checkOsv(name, resolvedVersion),
@@ -33,9 +41,13 @@ export async function analyzePackage(name: string, version: string | null = null
   ]);
   const reputationFindings = [...osv, ...depsdev, ...typosquat];
 
+  const installHooks = manifest.install_hooks ?? {};
+  const hookSources = manifest.hook_sources ?? [];
+
   // Not found and no external signal at all → we cannot vouch for it: NEEDS_REVIEW / BLOCK.
+  let card: VerdictCard;
   if (!found && reputationFindings.length === 0) {
-    return {
+    card = {
       verdict: 'NEEDS_REVIEW' as VerdictCard['verdict'],
       risk_score: 50,
       recommended_action: 'BLOCK' as VerdictCard['recommended_action'],
@@ -44,7 +56,14 @@ export async function analyzePackage(name: string, version: string | null = null
       reputation: [],
       scanned_version: resolvedVersion ?? null,
     };
+  } else {
+    card = { ...aggregateFindings(riskFindings, reputationFindings), scanned_version: resolvedVersion ?? null };
   }
 
-  return { ...aggregateFindings(riskFindings, reputationFindings), scanned_version: resolvedVersion ?? null };
+  return { card, installHooks, hookSources };
+}
+
+// Backwards-compatible helper: just the VerdictCard (CLI, MCP, deterministic callers).
+export async function analyzePackage(name: string, version: string | null = null): Promise<VerdictCard> {
+  return (await analyzeWithContext(name, version)).card;
 }

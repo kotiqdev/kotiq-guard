@@ -50,8 +50,14 @@ async function start(): Promise<void> {
             const pkg = req.query.pkg.trim();
             const withExplanation = req.query.explain !== 'false';
             debug('GET /scan', pkg, withExplanation ? '' : '(fast, no LLM)', req.query.from ? `from ${req.query.from}` : '');
+            const t0 = Date.now();
             const result = await guardGraph.invoke({ packageName: pkg, withExplanation });
-            return { ...result.verdict, explanation: result.explanation };
+            debug(`/scan ← total ${Date.now() - t0}ms ·`, pkg, result.verdict?.verdict ?? '?');
+            return {
+                ...result.verdict,
+                ...(result.securityLevel ? { security: { level: result.securityLevel, note: result.securityNote } } : {}),
+                explanation: result.explanation,
+            };
         },
     );
 
