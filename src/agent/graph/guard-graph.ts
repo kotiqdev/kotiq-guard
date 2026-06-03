@@ -12,6 +12,7 @@
 //   explain   — turns the effective verdict + security note into plain language for the user.
 // withExplanation=false → stop after scan (instant deterministic badge, no LLM).
 
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
 import { splitSpec } from '../../cli/scan';
@@ -79,7 +80,7 @@ async function scanNode(state: State): Promise<Partial<State>> {
 }
 
 // ── Node: security analyst over the install hooks (escalate-only) ────────────────────────────────
-async function securityNode(state: State): Promise<Partial<State>> {
+async function securityNode(state: State, config?: RunnableConfig): Promise<Partial<State>> {
     const hooks = state.installHooks ?? {};
     const sources = state.hookSources ?? [];
     const attempt = (state.securityAttempts ?? 0) + 1;
@@ -113,7 +114,7 @@ Respond with ONLY this JSON, nothing else:
 
     debug('security → analyzing', Object.keys(hooks).length, 'hook(s),', sources.length, 'readable source(s)', `(attempt ${attempt})`);
     const started = Date.now();
-    const res = await makeModel().invoke(prompt);
+    const res = await makeModel().invoke(prompt, config);
     debug(`security ← done (${Date.now() - started}ms)`);
 
     const obj = extractJson(String(res.content));
@@ -124,7 +125,7 @@ Respond with ONLY this JSON, nothing else:
 }
 
 // ── Node: critic — is the security judgment grounded in the real scripts? ────────────────────────
-async function criticNode(state: State): Promise<Partial<State>> {
+async function criticNode(state: State, config?: RunnableConfig): Promise<Partial<State>> {
     const hooks = state.installHooks ?? {};
     if (Object.keys(hooks).length === 0) return { criticPass: true };
 
@@ -147,7 +148,7 @@ Respond with ONLY this JSON: {"ok":true|false,"issue":"<short, empty if ok>"}`;
 
     debug('critic → calling LLM');
     const t0 = Date.now();
-    const res = await makeModel().invoke(prompt);
+    const res = await makeModel().invoke(prompt, config);
     debug(`critic ← done (${Date.now() - t0}ms)`);
     const obj = extractJson(String(res.content));
     const ok = obj?.ok !== false; // can't parse / not explicitly false → don't block
@@ -192,7 +193,7 @@ async function decideNode(state: State): Promise<Partial<State>> {
 }
 
 // ── Node: explain the effective verdict (+ validated security note) in plain language ────────────
-async function explainNode(state: State): Promise<Partial<State>> {
+async function explainNode(state: State, config?: RunnableConfig): Promise<Partial<State>> {
     const v = state.verdict;
     if (!v) return {};
 
@@ -226,7 +227,7 @@ Write 3-4 short, transparent sentences: name which install hooks exist (if any),
 
     debug('explain → calling LLM');
     const started = Date.now();
-    const res = await makeModel().invoke(prompt);
+    const res = await makeModel().invoke(prompt, config);
     debug(`explain ← done (${Date.now() - started}ms)`);
     const explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return { explanation };

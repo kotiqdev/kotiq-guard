@@ -46,25 +46,43 @@ async function start(): Promise<void> {
                 },
             },
         },
-        async (req) => {
+        async (req, reply) => {
             const pkg = req.query.pkg.trim();
             const withExplanation = req.query.explain !== 'false';
             debug('GET /scan', pkg, withExplanation ? '' : '(fast, no LLM)', req.query.from ? `from ${req.query.from}` : '');
+
+            // If the client goes away (extension cancel), abort the graph → aborts the in-flight LLM call.
+            const ac = new AbortController();
+            req.raw.on('close', () => {
+                if (!reply.raw.writableEnded) {
+                    ac.abort();
+                    debug('/scan ✕ client disconnected — aborting agents ·', pkg);
+                }
+            });
+
             const t0 = Date.now();
-            const result = await guardGraph.invoke({ packageName: pkg, withExplanation });
-            debug(`/scan ← total ${Date.now() - t0}ms ·`, pkg, result.verdict?.verdict ?? '?');
-            return {
-                ...result.verdict,
-                ...(result.effectiveVerdict
-                    ? { effective_verdict: result.effectiveVerdict, effective_action: result.effectiveAction }
-                    : {}),
-                scripts: {
-                    hooks: result.installHooks ?? {},
-                    readable: (result.hookSources ?? []).map((s) => s.path),
-                },
-                ...(result.securityLevel ? { security: { level: result.securityLevel, note: result.securityNote } } : {}),
-                explanation: result.explanation,
-            };
+            try {
+                const result = await guardGraph.invoke({ packageName: pkg, withExplanation }, { signal: ac.signal });
+                debug(`/scan ← total ${Date.now() - t0}ms ·`, pkg, result.verdict?.verdict ?? '?');
+                return {
+                    ...result.verdict,
+                    ...(result.effectiveVerdict
+                        ? { effective_verdict: result.effectiveVerdict, effective_action: result.effectiveAction }
+                        : {}),
+                    scripts: {
+                        hooks: result.installHooks ?? {},
+                        readable: (result.hookSources ?? []).map((s) => s.path),
+                    },
+                    ...(result.securityLevel ? { security: { level: result.securityLevel, note: result.securityNote } } : {}),
+                    explanation: result.explanation,
+                };
+            } catch (e) {
+                if (ac.signal.aborted) {
+                    debug(`/scan ✕ aborted after ${Date.now() - t0}ms ·`, pkg);
+                    return { aborted: true };
+                }
+                throw e;
+            }
         },
     );
 
