@@ -62,9 +62,23 @@ export function Popup() {
             <div style={S.header}>
                 <span style={{ fontSize: 18 }}>🐱</span>
                 <strong>Kotiq Guard</strong>
+                <span
+                    style={{
+                        marginLeft: 'auto',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: 0.5,
+                        color: C.grey,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 999,
+                        padding: '1px 7px',
+                    }}
+                >
+                    BETA
+                </span>
             </div>
             <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
-            <div style={S.footer}>Know before you install.</div>
+            <div style={S.footer}>Beta — early build. Know before you install.</div>
         </div>
     );
 }

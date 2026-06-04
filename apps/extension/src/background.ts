@@ -3,6 +3,7 @@
 // every backend call (it attaches the token). The badge/popup just send it messages.
 
 import { API_BASE } from './config';
+import { nanoStatus } from './lite/nano';
 import { signIn } from './popup/auth';
 import { clearSession, loadSession } from './session';
 
@@ -12,9 +13,13 @@ type Msg =
     | { type: 'getSession' }
     | { type: 'scan'; pkg: string; from?: string }
     | { type: 'explain'; pkg: string; from?: string }
-    | { type: 'cancel' };
+    | { type: 'cancel' }
+    | { type: 'nanoStatus' };
 
 let explainAbort: AbortController | null = null;
+
+// Log on-device AI availability at startup (handy while building the Lite tier).
+void nanoStatus().then((s) => console.info('[kotiq bg] Gemini Nano:', s));
 
 async function callScan(pkg: string, from: string, explain: boolean, signal?: AbortSignal) {
     const session = await loadSession();
@@ -63,6 +68,9 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                 case 'cancel':
                     explainAbort?.abort();
                     sendResponse({ ok: true });
+                    break;
+                case 'nanoStatus':
+                    sendResponse({ status: await nanoStatus() });
                     break;
                 default:
                     sendResponse({ ok: false, error: 'unknown message' });

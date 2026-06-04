@@ -329,8 +329,19 @@ export function Badge() {
                         overflow: 'hidden',
                     }}
                 >
-                    {/* Install hooks (from the instant deterministic scan) */}
+                    {/* What Kotiq checked (from the instant deterministic scan) */}
                     <div style={{ ...panel, color: '#57606a' }}>
+                        <div
+                            style={{
+                                fontSize: 11,
+                                textTransform: 'uppercase',
+                                letterSpacing: '.4px',
+                                color: '#8a929b',
+                                marginBottom: 4,
+                            }}
+                        >
+                            What Kotiq checked
+                        </div>
                         {hookNames.length ? (
                             <>
                                 <b>Install hooks:</b> {hookNames.join(', ')}
@@ -363,9 +374,14 @@ export function Badge() {
                             {loading ? '✕ Cancel — Thinking…' : full ? '🤖 Re-explain with AI' : '🤖 Explain with AI'}
                         </button>
                         {full?.explanation && (
-                            <div style={{ marginTop: 10, color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                                {full.explanation}
-                            </div>
+                            <>
+                                <div style={{ marginTop: 10, color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                                    {full.explanation}
+                                </div>
+                                <div style={{ marginTop: 8, color: '#8a929b', fontSize: 11, fontStyle: 'italic' }}>
+                                    AI summary — double-check critical installs.
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>
