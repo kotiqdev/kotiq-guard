@@ -3,8 +3,8 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
-import { isAllowed } from '../auth/access';
 import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
+import { getPlan } from '../entitlements';
 import { env } from '../env';
 import { debug } from '../logger';
 
@@ -35,11 +35,12 @@ async function start(): Promise<void> {
             if (!token) return reply.code(401).send({ error: 'missing bearer token' });
             try {
                 const id = await verifyIdToken(token, env.oauthClientId as string);
-                if (!isAllowed(id, env.allowedEmails, env.allowedDomains)) {
-                    debug('auth ✕ forbidden ·', id.email);
-                    return reply.code(403).send({ error: 'not allowed' });
+                const plan = await getPlan(id);
+                if (plan !== 'pro') {
+                    debug('auth ✕', plan, '·', id.email);
+                    return reply.code(403).send({ error: plan === 'blocked' ? 'blocked' : 'not allowed' });
                 }
-                debug('auth ✓', id.email);
+                debug('auth ✓ pro', id.email);
             } catch (e) {
                 debug('auth ✕ invalid token ·', (e as Error).message);
                 return reply.code(401).send({ error: 'invalid token' });
@@ -72,7 +73,9 @@ async function start(): Promise<void> {
             const id = env.oauthClientId
                 ? await verifyIdToken(token, env.oauthClientId)
                 : decodeIdTokenUnverified(token);
-            const role = isAllowed(id, env.allowedEmails, env.allowedDomains) ? 'pro' : 'lite';
+            const plan = await getPlan(id);
+            if (plan === 'blocked') return reply.code(403).send({ error: 'blocked' });
+            const role = plan === 'pro' ? 'pro' : 'lite';
             debug('/me', id.email, '→', role);
             return { role, email: id.email };
         } catch (e) {
