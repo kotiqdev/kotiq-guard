@@ -90,7 +90,12 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                     break;
                 case 'liteExplain': {
                     const { system, user } = litePrompts(msg.result);
-                    sendResponse({ ok: true, text: await explainWithNano(system, user) });
+                    // Stream model-download progress through storage so the badge can show a %.
+                    const text = await explainWithNano(system, user, (pct) =>
+                        void chrome.storage.local.set({ nanoProgress: pct }),
+                    );
+                    void chrome.storage.local.remove('nanoProgress');
+                    sendResponse({ ok: true, text });
                     break;
                 }
                 default:

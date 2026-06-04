@@ -34,15 +34,21 @@ export async function nanoStatus(): Promise<NanoStatus> {
 // One-shot explanation. Returns null when Nano can't run → caller hides the button / shows nothing.
 // One-shot explanation. Returns null when Nano can't run. On first use with status 'downloadable',
 // create() triggers the (one-time) model download and resolves once it's ready — we log progress.
-export async function explainWithNano(system: string, user: string): Promise<string | null> {
+export async function explainWithNano(
+    system: string,
+    user: string,
+    onProgress?: (pct: number) => void,
+): Promise<string | null> {
     if (!LM) return null;
     if ((await LM.availability()) === 'unavailable') return null;
     const session = await LM.create({
         initialPrompts: [{ role: 'system', content: system }],
         monitor: (m) =>
-            m.addEventListener('downloadprogress', (e) =>
-                console.info('[kotiq bg] Nano download', `${Math.round(e.loaded * 100)}%`),
-            ),
+            m.addEventListener('downloadprogress', (e) => {
+                const pct = Math.round(e.loaded * 100);
+                console.info('[kotiq bg] Nano download', `${pct}%`);
+                onProgress?.(pct);
+            }),
     });
     try {
         return (await session.prompt(user)).trim();

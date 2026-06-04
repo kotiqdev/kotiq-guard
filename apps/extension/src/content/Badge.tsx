@@ -115,6 +115,18 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
     const [nano, setNano] = useState<NanoStatus | null>(null);
     const [explaining, setExplaining] = useState(false);
     const [explanation, setExplanation] = useState<string | null>(null);
+    const [downloadPct, setDownloadPct] = useState<number | null>(null);
+
+    // Model-download progress arrives via storage (background → here).
+    useEffect(() => {
+        const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
+            if (area !== 'local' || !('nanoProgress' in changes)) return;
+            const v = changes.nanoProgress.newValue;
+            setDownloadPct(typeof v === 'number' ? v : null);
+        };
+        chrome.storage.onChanged.addListener(onChange);
+        return () => chrome.storage.onChanged.removeListener(onChange);
+    }, []);
 
     useEffect(() => {
         void chrome.runtime
@@ -154,6 +166,7 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, background: 'rgba(255,255,255,.25)', borderRadius: 999, padding: '1px 6px' }}>
                     LITE
                 </span>
+                {downloadPct != null && <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.9 }}>· ⏳ {downloadPct}%</span>}
             </div>
             {open && result && (
                 <div style={{ marginTop: 6, width: 320, background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)', overflow: 'hidden' }}>
@@ -165,7 +178,11 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                         {nanoOk ? (
                             <>
                                 <button type="button" className="kotiq-explain" disabled={explaining} onClick={explain}>
-                                    {explaining ? '⏳ Thinking on-device…' : '⚡ Explain on-device'}
+                                    {explaining
+                                        ? downloadPct != null
+                                            ? `⏳ Downloading model… ${downloadPct}%`
+                                            : '⏳ Thinking on-device…'
+                                        : '⚡ Explain on-device'}
                                 </button>
                                 <div style={{ marginTop: 6, color: '#8a929b', fontSize: 11 }}>
                                     Runs Gemini Nano in your browser — private, nothing leaves your device. First use
