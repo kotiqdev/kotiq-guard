@@ -1,30 +1,74 @@
-// Background service worker. The privileged context that CAN run chrome.identity (the content
-// script can't). The badge/popup send it messages; it performs sign-in and answers.
+// Background service worker — the privileged context. Content scripts can't run chrome.identity AND
+// can't reach localhost (Chrome blocks public-page → loopback). This worker owns BOTH: sign-in and
+// every backend call (it attaches the token). The badge/popup just send it messages.
 
-import { signIn } from './popup/auth'; // shared auth helper (folder name is organizational only)
+import { API_BASE } from './config';
+import { signIn } from './popup/auth';
 import { clearSession, loadSession } from './session';
 
-type Msg = { type: 'signIn' } | { type: 'signOut' } | { type: 'getSession' };
+type Msg =
+    | { type: 'signIn' }
+    | { type: 'signOut' }
+    | { type: 'getSession' }
+    | { type: 'scan'; pkg: string; from?: string }
+    | { type: 'explain'; pkg: string; from?: string }
+    | { type: 'cancel' };
+
+let explainAbort: AbortController | null = null;
+
+async function callScan(pkg: string, from: string, explain: boolean, signal?: AbortSignal) {
+    const session = await loadSession();
+    const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
+    const url =
+        `${API_BASE}/scan?pkg=${encodeURIComponent(pkg)}` +
+        `${explain ? '' : '&explain=false'}&from=${encodeURIComponent(from)}`;
+    const res = await fetch(url, { headers, signal });
+    return { ok: res.ok, status: res.status, data: res.ok ? await res.json() : null };
+}
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
     (async () => {
-        console.info('[kotiq bg] message:', msg.type);
         try {
-            if (msg.type === 'signIn') {
-                const session = await signIn(true);
-                console.info('[kotiq bg] ✓ sign-in complete:', session.email);
-                sendResponse({ ok: true, session });
-            } else if (msg.type === 'signOut') {
-                await clearSession();
-                console.info('[kotiq bg] signed out');
-                sendResponse({ ok: true });
-            } else if (msg.type === 'getSession') {
-                sendResponse({ ok: true, session: await loadSession() });
-            } else {
-                sendResponse({ ok: false, error: 'unknown message' });
+            switch (msg.type) {
+                case 'signIn': {
+                    const session = await signIn(true);
+                    console.info('[kotiq bg] ✓ sign-in complete:', session.email);
+                    sendResponse({ ok: true, session });
+                    break;
+                }
+                case 'signOut':
+                    await clearSession();
+                    sendResponse({ ok: true });
+                    break;
+                case 'getSession':
+                    sendResponse({ ok: true, session: await loadSession() });
+                    break;
+                case 'scan':
+                    sendResponse(await callScan(msg.pkg, msg.from ?? '', false));
+                    break;
+                case 'explain':
+                    explainAbort = new AbortController();
+                    try {
+                        sendResponse(await callScan(msg.pkg, msg.from ?? '', true, explainAbort.signal));
+                    } catch (e) {
+                        sendResponse(
+                            (e as Error).name === 'AbortError'
+                                ? { aborted: true }
+                                : { ok: false, error: (e as Error).message },
+                        );
+                    } finally {
+                        explainAbort = null;
+                    }
+                    break;
+                case 'cancel':
+                    explainAbort?.abort();
+                    sendResponse({ ok: true });
+                    break;
+                default:
+                    sendResponse({ ok: false, error: 'unknown message' });
             }
         } catch (e) {
-            console.warn('[kotiq bg] ✕ sign-in failed:', (e as Error).message);
+            console.warn('[kotiq bg] ✕', (e as Error).message);
             sendResponse({ ok: false, error: (e as Error).message });
         }
     })();

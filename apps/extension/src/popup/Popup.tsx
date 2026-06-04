@@ -100,7 +100,23 @@ function renderBody(view: View, onSignIn: () => void, onSignOut: () => void) {
             return (
                 <>
                     <div style={S.row}>
-                        <span style={{ color: C.fg }}>{view.session.email || 'signed in'}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            {view.session.picture && (
+                                <img
+                                    src={view.session.picture}
+                                    alt=""
+                                    width={28}
+                                    height={28}
+                                    style={{ borderRadius: '50%', flexShrink: 0 }}
+                                />
+                            )}
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ color: C.fg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {view.session.name || view.session.email || 'signed in'}
+                                </div>
+                                {view.session.name && <div style={{ color: C.dim, fontSize: 11 }}>{view.session.email}</div>}
+                            </div>
+                        </div>
                         {chip}
                     </div>
                     <p style={{ color: C.dim, margin: '8px 0 14px', fontSize: 12 }}>

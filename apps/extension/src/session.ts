@@ -5,14 +5,21 @@ export interface Session {
     idToken: string;
     email: string;
     exp: number; // unix seconds
+    name?: string; // display name (from the `profile` scope)
+    picture?: string; // avatar URL (from the `profile` scope)
 }
 
 const KEY = 'kotiqSession';
 
 // Read a JWT payload. NOT verification — the server checks the signature; we only read claims for UI.
-export function decodeJwt(token: string): { email?: string; exp?: number } {
+export function decodeJwt(token: string): { email?: string; exp?: number; name?: string; picture?: string } {
     const payload = token.split('.')[1] ?? '';
-    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { email?: string; exp?: number };
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        email?: string;
+        exp?: number;
+        name?: string;
+        picture?: string;
+    };
 }
 
 export async function loadSession(): Promise<Session | null> {

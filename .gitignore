@@ -10,6 +10,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# local user store (dev) — holds user emails, not for git
+data/users.json
+
 # editors / tooling
 .claude
 .idea

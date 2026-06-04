@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && npm run copy:assets",
     "copy:assets": "cp src/agent/agents.yml dist/agent/agents.yml",
-    "start": "node dist/server/server.js"
+    "start": "node dist/server/server.js",
+    "users": "ts-node src/users/cli.ts"
   },
   "dependencies": {
     "@fastify/swagger": "^9.7.0",
