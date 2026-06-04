@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { API_BASE, REQUIRE_AUTH } from '../config';
+import { REQUIRE_AUTH } from '../config';
 import { loadSession, type Session } from '../session';
 
 const COLORS: Record<string, string> = {
@@ -59,7 +59,8 @@ function packageSpecFromPage(): string | null {
     return version ? `${name}@${version}` : name;
 }
 
-const from = encodeURIComponent(location.href);
+// Reply shape from the background worker for scan/explain.
+type ScanReply = { ok?: boolean; status?: number; data?: ScanResult | null; aborted?: boolean; error?: string };
 
 // Shown when auth is required but the user isn't signed in. Clicking starts Google sign-in via the
 // background worker. We never call the scan cloud here — only auth.
@@ -109,7 +110,6 @@ export function Badge() {
     const [data, setData] = useState<ScanResult | null>(null); // fast deterministic scan
     const [full, setFull] = useState<ScanResult | null>(null); // after "Explain" (LLM agents)
     const [loading, setLoading] = useState(false);
-    const [controller, setController] = useState<AbortController | null>(null);
     const [open, setOpen] = useState(false);
     const [showVersionInfo, setShowVersionInfo] = useState(false);
     // undefined = still reading storage · null = signed out · Session = signed in
@@ -124,16 +124,15 @@ export function Badge() {
     useEffect(() => {
         if (!pkg || session === undefined) return; // wait until we know the session
         if (REQUIRE_AUTH && !session) return; // not signed in → never touch the cloud
-        const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
-        fetch(`${API_BASE}/scan?pkg=${encodeURIComponent(pkg)}&explain=false&from=${from}`, { headers })
-            .then((r) => {
-                if (r.status === 401) {
-                    setSession(null); // token rejected → fall back to the sign-in badge
-                    return null;
-                }
-                return r.json();
+        // Go through the background worker: content scripts can't reach localhost (Chrome blocks
+        // public-page → loopback). The background context (host_permissions) can.
+        void chrome.runtime
+            .sendMessage({ type: 'scan', pkg, from: location.href })
+            .then((r: ScanReply) => {
+                if (r?.status === 401) return setSession(null); // token rejected → sign-in badge
+                if (r?.ok && r.data) setData(r.data);
+                else setData({ verdict: 'error' });
             })
-            .then((d) => d && setData(d as ScanResult))
             .catch(() => setData({ verdict: 'error' }));
     }, [pkg, session]);
 
@@ -180,28 +179,20 @@ export function Badge() {
     const sec = full?.security;
 
     async function explain() {
-        const ctrl = new AbortController();
-        setController(ctrl);
         setLoading(true);
         try {
-            const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
-            const res: ScanResult = await fetch(
-                `${API_BASE}/scan?pkg=${encodeURIComponent(pkg!)}&from=${from}`,
-                { signal: ctrl.signal, headers },
-            ).then((r) => r.json());
-            setFull(res);
-        } catch (e) {
-            if ((e as Error).name !== 'AbortError') {
-                setFull({ verdict: data!.verdict, explanation: 'Could not reach the server.' });
-            }
+            const r = (await chrome.runtime.sendMessage({ type: 'explain', pkg, from: location.href })) as ScanReply;
+            if (r.aborted) return; // user cancelled
+            if (r.ok && r.data) setFull(r.data);
+            else setFull({ verdict: data!.verdict, explanation: 'Could not reach the server.' });
         } finally {
             setLoading(false);
-            setController(null);
         }
     }
 
     function cancel() {
-        controller?.abort();
+        void chrome.runtime.sendMessage({ type: 'cancel' });
+        setLoading(false);
     }
 
     const panel = { padding: '10px 12px', borderBottom: '1px solid #eaeef2' } as const;
