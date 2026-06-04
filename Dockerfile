@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ── Builder: install deps, compile TypeScript → dist/ ────────────────────────────────────────────
-FROM node:22-slim AS builder
+FROM node:24-slim AS builder
 WORKDIR /app
 
 # Install ALL deps (incl. devDeps like typescript/ts-node) — needed only to build.
@@ -17,7 +17,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Runtime: slim image, no source, no toolchain, non-root ───────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
