@@ -15,5 +15,12 @@ dist/
 .idea
 .vscode
 
+# terraform — state can hold sensitive values; .terraform/ is downloaded plugins.
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — it must be committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
 # os
 .DS_Store
