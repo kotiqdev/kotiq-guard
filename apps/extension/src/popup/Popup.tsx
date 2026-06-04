@@ -1,0 +1,176 @@
+import { useEffect, useState, type CSSProperties } from 'react';
+
+import { fetchRole, loadSession, signIn, signOut, type Role, type Session } from './auth';
+
+// The popup is a tiny state machine. One of these is shown at a time.
+type View =
+    | { kind: 'loading' }
+    | { kind: 'signedOut' }
+    | { kind: 'signedIn'; session: Session; role: Role | 'checking'; note?: string }
+    | { kind: 'error'; message: string };
+
+const C = {
+    bg: '#0d0d0d',
+    fg: '#e6e6e6',
+    dim: '#8a8a8a',
+    green: '#00ff41', // PRO
+    grey: '#9aa0a6', // LITE
+    border: '#2a2a2a',
+};
+
+export function Popup() {
+    const [view, setView] = useState<View>({ kind: 'loading' });
+
+    // On open: restore a cached session, then resolve the tier from the backend.
+    useEffect(() => {
+        void (async () => {
+            const session = await loadSession();
+            if (!session) return setView({ kind: 'signedOut' });
+            setView({ kind: 'signedIn', session, role: 'checking' });
+            try {
+                const role = await fetchRole(session.idToken);
+                setView({ kind: 'signedIn', session, role });
+            } catch {
+                setView({ kind: 'signedIn', session, role: 'checking', note: "Couldn't verify access — backend offline?" });
+            }
+        })();
+    }, []);
+
+    async function handleSignIn() {
+        setView({ kind: 'loading' });
+        try {
+            const session = await signIn();
+            setView({ kind: 'signedIn', session, role: 'checking' });
+            try {
+                const role = await fetchRole(session.idToken);
+                setView({ kind: 'signedIn', session, role });
+            } catch {
+                setView({ kind: 'signedIn', session, role: 'checking', note: "Couldn't verify access yet." });
+            }
+        } catch (e) {
+            setView({ kind: 'error', message: (e as Error).message });
+        }
+    }
+
+    async function handleSignOut() {
+        await signOut();
+        setView({ kind: 'signedOut' });
+    }
+
+    return (
+        <div style={S.shell}>
+            <div style={S.header}>
+                <span style={{ fontSize: 18 }}>🐱</span>
+                <strong>Kotiq Guard</strong>
+            </div>
+            <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
+            <div style={S.footer}>Know before you install.</div>
+        </div>
+    );
+}
+
+function renderBody(view: View, onSignIn: () => void, onSignOut: () => void) {
+    switch (view.kind) {
+        case 'loading':
+            return <p style={{ color: C.dim }}>…</p>;
+
+        case 'signedOut':
+            return (
+                <>
+                    <p style={{ color: C.dim, margin: '0 0 12px' }}>Sign in to scan npm packages.</p>
+                    <button style={S.primary} onClick={onSignIn}>
+                        Sign in with Google
+                    </button>
+                </>
+            );
+
+        case 'error':
+            return (
+                <>
+                    <p style={{ color: '#ff5c5c', margin: '0 0 12px' }}>{view.message}</p>
+                    <button style={S.primary} onClick={onSignIn}>
+                        Try again
+                    </button>
+                </>
+            );
+
+        case 'signedIn': {
+            const isPro = view.role === 'pro';
+            const chip = view.role === 'checking' ? null : <Chip pro={isPro} />;
+            return (
+                <>
+                    <div style={S.row}>
+                        <span style={{ color: C.fg }}>{view.session.email || 'signed in'}</span>
+                        {chip}
+                    </div>
+                    <p style={{ color: C.dim, margin: '8px 0 14px', fontSize: 12 }}>
+                        {view.role === 'checking' && (view.note ?? 'Checking your access…')}
+                        {view.role === 'pro' && 'Full cloud scan — Gemini on Vertex AI.'}
+                        {view.role === 'lite' && 'On-device scan — Gemini Nano in your browser.'}
+                    </p>
+                    {view.role === 'lite' && (
+                        <button style={S.ghost} onClick={() => window.open('https://kotiq.dev', '_blank')}>
+                            Request Pro access
+                        </button>
+                    )}
+                    <button style={S.link} onClick={onSignOut}>
+                        Sign out
+                    </button>
+                </>
+            );
+        }
+    }
+}
+
+function Chip({ pro }: { pro: boolean }) {
+    return (
+        <span
+            style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                padding: '2px 8px',
+                borderRadius: 999,
+                color: pro ? '#001b06' : '#111',
+                background: pro ? C.green : C.grey,
+            }}
+        >
+            {pro ? 'PRO' : 'LITE'}
+        </span>
+    );
+}
+
+const S: Record<string, CSSProperties> = {
+    shell: {
+        width: 300,
+        background: C.bg,
+        color: C.fg,
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        border: `1px solid ${C.border}`,
+    },
+    header: { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: `1px solid ${C.border}` },
+    body: { padding: 16, minHeight: 96 },
+    footer: { padding: '8px 14px', borderTop: `1px solid ${C.border}`, color: C.dim, fontSize: 11 },
+    row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    primary: {
+        width: '100%',
+        padding: '10px 12px',
+        background: C.green,
+        color: '#001b06',
+        border: 'none',
+        borderRadius: 8,
+        fontWeight: 700,
+        cursor: 'pointer',
+    },
+    ghost: {
+        width: '100%',
+        padding: '8px 12px',
+        background: 'transparent',
+        color: C.fg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        cursor: 'pointer',
+        marginBottom: 8,
+    },
+    link: { width: '100%', padding: 6, background: 'none', color: C.dim, border: 'none', cursor: 'pointer', fontSize: 12 },
+};

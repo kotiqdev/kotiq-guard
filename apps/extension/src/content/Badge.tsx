@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-const SERVER = 'http://localhost:8080';
+import { API_BASE, REQUIRE_AUTH } from '../config';
+import { loadSession, type Session } from '../session';
 
 const COLORS: Record<string, string> = {
     SAFE: '#1a7f37',
@@ -60,6 +61,48 @@ function packageSpecFromPage(): string | null {
 
 const from = encodeURIComponent(location.href);
 
+// Shown when auth is required but the user isn't signed in. Clicking starts Google sign-in via the
+// background worker. We never call the scan cloud here — only auth.
+function SignInBadge({ onSignIn, busy, error }: { onSignIn: () => void; busy: boolean; error: string | null }) {
+    return (
+        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
+            <div
+                onClick={busy ? undefined : onSignIn}
+                title="Sign in with Google to scan this package"
+                style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    color: '#fff',
+                    fontWeight: 600,
+                    background: '#6e7781',
+                    boxShadow: '0 2px 8px rgba(0,0,0,.2)',
+                    cursor: busy ? 'default' : 'pointer',
+                    opacity: busy ? 0.7 : 1,
+                }}
+            >
+                🔒 Kotiq · {busy ? 'Signing in…' : 'Sign in to scan'}
+            </div>
+            {error && (
+                <div
+                    style={{
+                        marginTop: 6,
+                        width: 280,
+                        background: '#fff',
+                        color: '#cf222e',
+                        border: '1px solid #d0d7de',
+                        borderRadius: 8,
+                        boxShadow: '0 4px 16px rgba(0,0,0,.18)',
+                        padding: '8px 10px',
+                        lineHeight: 1.4,
+                    }}
+                >
+                    {error}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function Badge() {
     const [pkg] = useState(packageSpecFromPage());
     const [pageVersion] = useState(versionFromPage());
@@ -69,16 +112,60 @@ export function Badge() {
     const [controller, setController] = useState<AbortController | null>(null);
     const [open, setOpen] = useState(false);
     const [showVersionInfo, setShowVersionInfo] = useState(false);
+    // undefined = still reading storage · null = signed out · Session = signed in
+    const [session, setSession] = useState<Session | null | undefined>(undefined);
+    const [authBusy, setAuthBusy] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!pkg) return;
-        fetch(`${SERVER}/scan?pkg=${encodeURIComponent(pkg)}&explain=false&from=${from}`)
-            .then((r) => r.json())
-            .then(setData)
-            .catch(() => setData({ verdict: 'error' }));
-    }, [pkg]);
+        void loadSession().then((s) => setSession(s));
+    }, []);
 
-    if (!pkg || !data) return null;
+    useEffect(() => {
+        if (!pkg || session === undefined) return; // wait until we know the session
+        if (REQUIRE_AUTH && !session) return; // not signed in → never touch the cloud
+        const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
+        fetch(`${API_BASE}/scan?pkg=${encodeURIComponent(pkg)}&explain=false&from=${from}`, { headers })
+            .then((r) => {
+                if (r.status === 401) {
+                    setSession(null); // token rejected → fall back to the sign-in badge
+                    return null;
+                }
+                return r.json();
+            })
+            .then((d) => d && setData(d as ScanResult))
+            .catch(() => setData({ verdict: 'error' }));
+    }, [pkg, session]);
+
+    // Ask the background worker to run the Google sign-in flow (content scripts can't do it).
+    async function doSignIn() {
+        setAuthBusy(true);
+        setAuthError(null);
+        console.info('[kotiq] sign-in requested → asking background to start Google flow');
+        try {
+            const resp = (await chrome.runtime.sendMessage({ type: 'signIn' })) as
+                | { ok: true; session: Session }
+                | { ok: false; error: string };
+            if (resp.ok) {
+                console.info('[kotiq] signed in as', resp.session.email);
+                setSession(resp.session);
+            } else {
+                console.warn('[kotiq] sign-in failed:', resp.error);
+                setAuthError(resp.error);
+            }
+        } catch (e) {
+            console.warn('[kotiq] sign-in error:', (e as Error).message);
+            setAuthError((e as Error).message);
+        } finally {
+            setAuthBusy(false);
+        }
+    }
+
+    if (!pkg) return null;
+    if (REQUIRE_AUTH && session === null) {
+        return <SignInBadge onSignIn={doSignIn} busy={authBusy} error={authError} />;
+    }
+    if (!data) return null;
 
     // Badge reflects the effective verdict (security can escalate it once we've run the agents).
     const shown = full?.effective_verdict ?? data.verdict;
@@ -97,9 +184,10 @@ export function Badge() {
         setController(ctrl);
         setLoading(true);
         try {
+            const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
             const res: ScanResult = await fetch(
-                `${SERVER}/scan?pkg=${encodeURIComponent(pkg!)}&from=${from}`,
-                { signal: ctrl.signal },
+                `${API_BASE}/scan?pkg=${encodeURIComponent(pkg!)}&from=${from}`,
+                { signal: ctrl.signal, headers },
             ).then((r) => r.json());
             setFull(res);
         } catch (e) {

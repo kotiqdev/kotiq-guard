@@ -12,10 +12,14 @@ async function start(): Promise<void> {
     const app = Fastify({ logger: false });
 
     // Permissive CORS so the browser extension (and local tools) can call /scan.
-    app.addHook('onRequest', async (_req, reply) => {
+    // The Authorization header makes requests "non-simple", so the browser sends a CORS preflight
+    // (OPTIONS) first — we must answer it with 204 + these headers, or the real request is blocked.
+    app.addHook('onRequest', async (req, reply) => {
         reply.header('Access-Control-Allow-Origin', '*');
         reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
         reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+        reply.header('Access-Control-Max-Age', '86400');
+        if (req.method === 'OPTIONS') return reply.code(204).send(); // answer the preflight
     });
 
     // Auth gate. When enabled, every request (except /health and CORS preflight) must carry a
