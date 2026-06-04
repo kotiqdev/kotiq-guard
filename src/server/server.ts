@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
 import { isAllowed } from '../auth/access';
-import { verifyIdToken } from '../auth/verify';
+import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
 import { env } from '../env';
 import { debug } from '../logger';
 
@@ -28,7 +28,8 @@ async function start(): Promise<void> {
     if (env.authEnabled) {
         if (!env.oauthClientId) throw new Error('AUTH_ENABLED is set but GOOGLE_OAUTH_CLIENT_ID is missing');
         app.addHook('onRequest', async (req, reply) => {
-            if (req.method === 'OPTIONS' || req.url === '/health') return;
+            // /me resolves the user's tier (incl. Lite, who are NOT allow-listed) → must skip the gate.
+            if (req.method === 'OPTIONS' || req.url === '/health' || req.url.startsWith('/me')) return;
             const header = req.headers.authorization ?? '';
             const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
             if (!token) return reply.code(401).send({ error: 'missing bearer token' });
@@ -59,6 +60,26 @@ async function start(): Promise<void> {
     await app.register(swaggerUi, { routePrefix: '/docs' });
 
     app.get('/health', async () => ({ ok: true }));
+
+    // Who am I + which tier. The extension calls this after sign-in to choose Pro vs Lite UI.
+    //   allow-listed verified Google user → "pro" · any other verified Google user → "lite".
+    app.get('/me', async (req, reply) => {
+        const header = req.headers.authorization ?? '';
+        const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+        if (!token) return reply.code(401).send({ error: 'missing bearer token' });
+        try {
+            // Verify the signature when an OAuth client id is set; locally (none set) decode-only.
+            const id = env.oauthClientId
+                ? await verifyIdToken(token, env.oauthClientId)
+                : decodeIdTokenUnverified(token);
+            const role = isAllowed(id, env.allowedEmails, env.allowedDomains) ? 'pro' : 'lite';
+            debug('/me', id.email, '→', role);
+            return { role, email: id.email };
+        } catch (e) {
+            debug('/me ✕', (e as Error).message);
+            return reply.code(401).send({ error: 'invalid token' });
+        }
+    });
 
     // GET /scan?pkg=event-stream@3.3.6  →  VerdictCard + explanation
     app.get<{ Querystring: { pkg: string; from?: string; explain?: string } }>(
