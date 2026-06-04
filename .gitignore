@@ -22,5 +22,8 @@ dist/
 *.tfstate.*
 crash.log
 
+# extension signing key — pins the extension id; keep private
+apps/extension/extension-key.pem
+
 # os
 .DS_Store
