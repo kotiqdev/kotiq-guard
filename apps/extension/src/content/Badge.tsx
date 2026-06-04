@@ -104,6 +104,52 @@ function SignInBadge({ onSignIn, busy, error }: { onSignIn: () => void; busy: bo
     );
 }
 
+// Shown when the backend returns 403 — a valid Google user who isn't on the Pro allow-list.
+// The deterministic safety floor will run on-device (Gemini Nano) in a later phase; for now we
+// explain the tier instead of erroring.
+function LiteBadge({ version }: { version: string | null }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
+            <div
+                onClick={() => setOpen((o) => !o)}
+                style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    color: '#fff',
+                    fontWeight: 600,
+                    background: '#9aa0a6',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,.2)',
+                }}
+            >
+                🐱 Kotiq · Lite
+                {version && <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>· {version}</span>}
+            </div>
+            {open && (
+                <div
+                    style={{
+                        marginTop: 6,
+                        width: 300,
+                        background: '#fff',
+                        color: '#24292f',
+                        border: '1px solid #d0d7de',
+                        borderRadius: 8,
+                        boxShadow: '0 4px 16px rgba(0,0,0,.18)',
+                        padding: '12px',
+                    }}
+                >
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>You're on the free tier</div>
+                    <div style={{ color: '#57606a', lineHeight: 1.45, fontSize: 12.5 }}>
+                        On-device scanning (Gemini Nano, in your browser) is coming. For full cloud analysis now,
+                        request Pro access from the Kotiq toolbar icon.
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function Badge() {
     const [pkg] = useState(packageSpecFromPage());
     const [pageVersion] = useState(versionFromPage());
@@ -116,6 +162,7 @@ export function Badge() {
     const [session, setSession] = useState<Session | null | undefined>(undefined);
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [lite, setLite] = useState(false); // true when the backend says we're not allow-listed (403)
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -130,6 +177,7 @@ export function Badge() {
             .sendMessage({ type: 'scan', pkg, from: location.href })
             .then((r: ScanReply) => {
                 if (r?.status === 401) return setSession(null); // token rejected → sign-in badge
+                if (r?.status === 403) return setLite(true); // valid user, not allow-listed → Lite
                 if (r?.ok && r.data) setData(r.data);
                 else setData({ verdict: 'error' });
             })
@@ -164,6 +212,7 @@ export function Badge() {
     if (REQUIRE_AUTH && session === null) {
         return <SignInBadge onSignIn={doSignIn} busy={authBusy} error={authError} />;
     }
+    if (lite) return <LiteBadge version={pageVersion} />;
     if (!data) return null;
 
     // Badge reflects the effective verdict (security can escalate it once we've run the agents).
