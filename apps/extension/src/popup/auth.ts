@@ -16,7 +16,7 @@ export async function signIn(interactive = true): Promise<Session> {
     url.searchParams.set('client_id', OAUTH_CLIENT_ID);
     url.searchParams.set('response_type', 'id_token'); // OpenID Connect ID token (a JWT)
     url.searchParams.set('redirect_uri', chrome.identity.getRedirectURL()); // https://<id>.chromiumapp.org/
-    url.searchParams.set('scope', 'openid email');
+    url.searchParams.set('scope', 'openid email profile'); // profile → name + avatar
     url.searchParams.set('nonce', crypto.randomUUID()); // required for the id_token flow
     url.searchParams.set('prompt', 'select_account');
 
@@ -28,8 +28,8 @@ export async function signIn(interactive = true): Promise<Session> {
     const idToken = new URLSearchParams(new URL(redirect).hash.slice(1)).get('id_token');
     if (!idToken) throw new Error('no id_token in the response');
 
-    const { email, exp } = decodeJwt(idToken);
-    const session: Session = { idToken, email: email ?? '', exp: exp ?? 0 };
+    const { email, exp, name, picture } = decodeJwt(idToken);
+    const session: Session = { idToken, email: email ?? '', exp: exp ?? 0, name, picture };
     await saveSession(session);
     console.info('[kotiq auth] ✓ signed in as', session.email, '· token expires', new Date(session.exp * 1000).toLocaleString());
     return session;

@@ -21,9 +21,9 @@ const EnvSchema = z.object({
     GOOGLE_OAUTH_CLIENT_ID: z.string().optional(), // expected `aud` of the ID token
     ALLOWED_EMAILS: z.string().optional(), // comma-separated, e.g. "a@x.com,b@y.com"
     ALLOWED_DOMAINS: z.string().optional(), // comma-separated Workspace domains, matched vs verified `hd`
-    // Entitlements store (who is pro/blocked): 'file' (dev JSON) | 'firestore' (prod, wired at deploy).
-    ENTITLEMENTS_STORE: z.enum(['file', 'firestore']).default('file'),
-    ENTITLEMENTS_FILE: z.string().default('data/entitlements.json'),
+    // User store (who is pro/blocked): 'file' (dev JSON) | 'firestore' (prod, wired at deploy).
+    USERS_STORE: z.enum(['file', 'firestore']).default('file'),
+    USERS_FILE: z.string().default('data/users.json'),
     PORT: z.coerce.number().default(8080),
 });
 
@@ -49,8 +49,8 @@ export interface Env {
     oauthClientId?: string;
     allowedEmails: Set<string>;
     allowedDomains: Set<string>;
-    entitlementsStore: 'file' | 'firestore';
-    entitlementsFile: string;
+    usersStore: 'file' | 'firestore';
+    usersFile: string;
     port: number;
 }
 
@@ -69,7 +69,7 @@ export const env: Env = {
     oauthClientId: parsed.GOOGLE_OAUTH_CLIENT_ID,
     allowedEmails: toLowerSet(parsed.ALLOWED_EMAILS),
     allowedDomains: toLowerSet(parsed.ALLOWED_DOMAINS),
-    entitlementsStore: parsed.ENTITLEMENTS_STORE,
-    entitlementsFile: parsed.ENTITLEMENTS_FILE,
+    usersStore: parsed.USERS_STORE,
+    usersFile: parsed.USERS_FILE,
     port: parsed.PORT,
 };

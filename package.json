@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.build.json && npm run copy:assets",
     "copy:assets": "cp src/agent/agents.yml dist/agent/agents.yml",
     "start": "node dist/server/server.js",
-    "entitlements": "ts-node src/entitlements/cli.ts"
+    "users": "ts-node src/users/cli.ts"
   },
   "dependencies": {
     "@fastify/swagger": "^9.7.0",

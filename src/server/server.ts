@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
 import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
-import { getPlan } from '../entitlements';
+import { getPlan, recordSeen } from '../users';
 import { env } from '../env';
 import { debug } from '../logger';
 
@@ -73,11 +73,12 @@ async function start(): Promise<void> {
             const id = env.oauthClientId
                 ? await verifyIdToken(token, env.oauthClientId)
                 : decodeIdTokenUnverified(token);
+            const user = await recordSeen(id); // upsert the registry (lastSeen + name/picture)
             const plan = await getPlan(id);
             if (plan === 'blocked') return reply.code(403).send({ error: 'blocked' });
             const role = plan === 'pro' ? 'pro' : 'lite';
             debug('/me', id.email, '→', role);
-            return { role, email: id.email };
+            return { role, email: id.email, name: user.name, picture: user.picture };
         } catch (e) {
             debug('/me ✕', (e as Error).message);
             return reply.code(401).send({ error: 'invalid token' });

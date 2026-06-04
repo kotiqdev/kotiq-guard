@@ -10,8 +10,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# local entitlements store (dev) — holds user emails, not for git
-data/entitlements.json
+# local user store (dev) — holds user emails, not for git
+data/users.json
 
 # editors / tooling
 .claude

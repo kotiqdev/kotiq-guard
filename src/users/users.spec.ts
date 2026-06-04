@@ -1,6 +1,6 @@
 import type { VerifiedIdentity } from '../auth/access';
 import { decidePlan } from './index';
-import type { Entitlement } from './types';
+import type { User } from './types';
 
 const allowedEmails = new Set(['admin@example.com']);
 const allowedDomains = new Set(['corp.example']);
@@ -8,8 +8,9 @@ const allowedDomains = new Set(['corp.example']);
 function id(over: Partial<VerifiedIdentity> = {}): VerifiedIdentity {
     return { email: 'user@example.com', emailVerified: true, ...over };
 }
-const pro: Entitlement = { plan: 'pro' };
-const blocked: Entitlement = { plan: 'blocked' };
+const dates = { createdAt: 't', updatedAt: 't' };
+const pro: User = { plan: 'pro', ...dates };
+const blocked: User = { plan: 'blocked', ...dates };
 
 describe('decidePlan', () => {
     it('unknown verified user → free', () => {
@@ -20,11 +21,11 @@ describe('decidePlan', () => {
         expect(decidePlan(id(), pro, null, allowedEmails, allowedDomains)).toBe('pro');
     });
 
-    it('env allow-list → pro (admin override, no store entry)', () => {
+    it('env allow-list → pro (admin override, no store record)', () => {
         expect(decidePlan(id({ email: 'admin@example.com' }), null, null, allowedEmails, allowedDomains)).toBe('pro');
     });
 
-    it('blocked email wins over everything', () => {
+    it('blocked record wins over everything', () => {
         expect(decidePlan(id({ email: 'admin@example.com' }), blocked, null, allowedEmails, allowedDomains)).toBe('blocked');
     });
 
