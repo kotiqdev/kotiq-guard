@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { REQUIRE_AUTH } from '../config';
-import { loadSession, type Session } from '../session';
+import { loadSession, SESSION_KEY, type Session } from '../session';
 
 const COLORS: Record<string, string> = {
     SAFE: '#1a7f37',
@@ -166,6 +166,21 @@ export function Badge() {
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
+    }, []);
+
+    // Live-update when the popup or background signs in/out (storage changes in another context).
+    useEffect(() => {
+        const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
+            if (area !== 'local' || !(SESSION_KEY in changes)) return;
+            void loadSession().then((s) => {
+                setData(null);
+                setFull(null);
+                setLite(false);
+                setSession(s ?? null);
+            });
+        };
+        chrome.storage.onChanged.addListener(onChange);
+        return () => chrome.storage.onChanged.removeListener(onChange);
     }, []);
 
     useEffect(() => {
