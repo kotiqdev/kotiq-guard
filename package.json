@@ -6,6 +6,9 @@
   "author": "",
   "type": "commonjs",
   "main": "index.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "guard": "ts-node src/agent/graph/guard-graph.ts",
     "serve": "ts-node src/server/server.ts",
