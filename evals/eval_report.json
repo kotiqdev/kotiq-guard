@@ -1,17 +1,8 @@
 {
   "total": 12,
-  "passed": 11,
-  "failed": 1,
+  "passed": 12,
+  "failed": 0,
   "recall_malicious": 1,
-  "accuracy": 0.9166666666666666,
-  "failures": [
-    {
-      "fixture": "evals/golden/malicious/node-eval.json",
-      "expected_verdict": "SUSPICIOUS",
-      "actual_verdict": "SUSPICIOUS",
-      "expected_action": "QUARANTINE",
-      "actual_action": "ALLOW_WITH_WARNING",
-      "notes": "postinstall uses node -e inline execution (node_dash_e HIGH — no CRITICAL → SUSPICIOUS)"
-    }
-  ]
+  "accuracy": 1,
+  "failures": []
 }
