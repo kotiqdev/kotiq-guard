@@ -166,6 +166,16 @@ function makeReader(owner: string, repo: string, branch: string): (path: string)
     };
 }
 
+// Open a repo for reading: resolve the default branch, list files, return a passive file reader.
+// Used by the Pro AI pass to read the LIVE source the analyst needs.
+export async function openRepo(owner: string, repo: string): Promise<RepoFiles> {
+    const meta = await getRepoMeta(owner, repo);
+    const branch = meta?.defaultBranch ?? 'HEAD';
+    const read = makeReader(owner, repo, branch);
+    const paths = await getTree(owner, repo, branch);
+    return { paths: paths.length ? paths : ['package.json'], read };
+}
+
 export async function repoScan(owner: string, repo: string): Promise<RepoResult> {
     const id = `${owner}/${repo}`;
     const empty = (error?: string): RepoResult => ({
