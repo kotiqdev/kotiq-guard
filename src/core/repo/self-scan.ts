@@ -55,8 +55,13 @@ const LIFECYCLE = [
 const RUNS_LOCAL_CODE = /\b(?:node|ts-node|tsx|bun|deno|babel-node|nodemon)\b|\.(?:js|cjs|mjs|ts|sh)\b/;
 const MAX_SOURCE_FILES = 40;
 const SOURCE_EXT = /\.(?:js|cjs|mjs|ts|cts|mts)$/;
-const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|build|out|coverage|\.next|vendor)\//;
-const SKIP_FILE = /\.(?:min|bundle)\.js$/;
+// Vendored toolchains / generated / bundled code legitimately use eval/new Function — never scan them.
+const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|build|out|lib|coverage|\.next|\.nuxt|\.yarn|\.pnp|vendor|third_party|__generated__|generated)\//;
+const SKIP_FILE = /\.(?:min|bundle|chunk)\.(?:js|cjs|mjs)$|(?:^|\/)\.pnp\.[\w.]+$|(?:^|\/)yarn-[\d.]+\.cjs$/;
+// Signatures that are normal in ordinary application source — flagged only inside install hooks /
+// auto-run paths, NOT as a risk just for appearing in a source file:
+//   making HTTP calls, using eval / new Function (templating, parsers), `node -e`.
+const SOURCE_SKIP = new Set(['outbound_http', 'eval_call', 'function_constructor', 'node_dash_e']);
 
 // Tolerant JSON parse: VS Code config files allow // and /* */ comments and trailing commas.
 function looseJsonParse(text: string): unknown {
@@ -235,6 +240,7 @@ const ENV_EXFIL_RE =
 
 function checkSource(path: string, text: string, out: RepoSelfFinding[]): void {
     for (const hit of scan(text)) {
+        if (SOURCE_SKIP.has(hit.name)) continue; // normal in ordinary app source — not a risk by itself
         add(out, {
             kind: 'source',
             file: path,
@@ -295,20 +301,31 @@ function pickSourceFiles(paths: string[], pkgMain?: string): string[] {
     return candidates.sort((a, b) => score(a) - score(b)).slice(0, MAX_SOURCE_FILES);
 }
 
-// Turn findings into developer-facing "what this is" bullets.
+// Turn findings into developer-facing "what this is" bullets. The alarming narrative is produced
+// ONLY when a high-confidence lure signal is present (auto-exec on open/install, remote shell pipe,
+// base64 C2, env exfiltration, hidden command). A lone eval / fetch / new Function in ordinary
+// source does NOT trigger it — that is normal application code, not a "do not install" situation.
 function explain(findings: RepoSelfFinding[]): string[] {
-    if (!findings.length) return [];
-    const has = (k: SelfFindingKind) => findings.some((f) => f.kind === k);
-    const out: string[] = [];
+    const sev = (f: RepoSelfFinding) => SEV_RANK[f.severity];
     const folderOpen = findings.some((f) => f.label.includes('folder is opened'));
+    const remotePipe = findings.some((f) => /remote shell pipe|\bcurl\b|\bwget\b/i.test(f.label));
+    const c2env = findings.some((f) => f.kind === 'env_secret');
+    const exfil = findings.some((f) => /environment variables/i.test(f.label));
+    const padding = findings.some((f) => /whitespace padding/i.test(f.label));
+    const trust = findings.some((f) => /Workspace Trust|allowAutomaticTasks/i.test(f.label));
+    const dangerousHook = findings.some((f) => f.kind === 'install_hook' && sev(f) >= SEV_RANK[Severity.HIGH]);
+
+    const lure = folderOpen || remotePipe || c2env || exfil || padding || dangerousHook;
+    if (!lure) return []; // only context-level findings → no alarming narrative
+
+    const out: string[] = [];
     if (folderOpen) out.push('Runs code automatically the moment you OPEN the folder in VS Code (.vscode/tasks.json runOn:folderOpen) — no `npm install` required.');
-    if (has('install_hook')) out.push('Runs project code automatically on `npm install` via a package.json lifecycle hook (prepare/postinstall).');
-    if (findings.some((f) => /remote shell pipe|curl|wget/i.test(f.label))) out.push('Downloads a remote script and pipes it straight into your shell (curl … | sh).');
-    if (findings.some((f) => /eval|Function\(/i.test(f.label))) out.push('Executes JavaScript sent back by a remote server (eval / new Function).');
-    if (findings.some((f) => /environment variables|process\.env/i.test(f.label))) out.push('Sends your environment variables (tokens, keys) to a remote host.');
-    if (has('env_secret')) out.push('Hides a command-and-control URL as a base64 string in .env.');
-    if (findings.some((f) => /whitespace padding|word-wrap/i.test(f.label))) out.push('Hides the malicious URL off-screen using whitespace padding / word-wrap tricks.');
-    if (findings.some((f) => /Workspace Trust|allowAutomaticTasks/i.test(f.label))) out.push('Weakens VS Code safety settings so the auto-run task fires silently.');
+    if (dangerousHook) out.push('Runs a dangerous command automatically on `npm install` via a package.json lifecycle hook.');
+    if (remotePipe) out.push('Downloads a remote script and pipes it straight into your shell (curl … | sh).');
+    if (exfil) out.push('Sends your environment variables (tokens, keys) to a remote host.');
+    if (c2env) out.push('Hides a command-and-control URL as a base64 string in .env.');
+    if (padding) out.push('Hides the malicious URL off-screen using whitespace padding / word-wrap tricks.');
+    if (trust) out.push('Weakens VS Code safety settings so the auto-run task fires silently.');
     out.push('This matches the “Contagious Interview” / BeaverTail fake-recruiter malware pattern. Do NOT open or install this repository — inspect it in a sandbox only.');
     return out;
 }

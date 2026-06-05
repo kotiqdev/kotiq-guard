@@ -62,10 +62,11 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
         expect(env?.detail).toContain('ip-checking-x.example.invalid');
     });
 
-    it('catches new Function() remote execution and process.env exfiltration in source', async () => {
+    it('flags process.env exfiltration, but not a lone new Function in source', async () => {
         const r = await selfScan(malicious);
-        expect(r.findings.some((f) => /Function\(\) constructor/.test(f.label))).toBe(true);
         expect(r.findings.some((f) => /environment variables/.test(f.label))).toBe(true);
+        // A bare new Function / eval in source is normal app code — not a risk on its own.
+        expect(r.findings.some((f) => /Function\(\) constructor/.test(f.label))).toBe(false);
     });
 
     it('flags the auto-running lifecycle hook', async () => {
@@ -76,6 +77,24 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
     it('produces a developer-facing explanation naming the campaign', async () => {
         const r = await selfScan(malicious);
         expect(r.what.join(' ')).toMatch(/Contagious Interview/i);
+    });
+
+    it('does NOT false-positive on a legit project (vendored toolchain, fetch, templating)', async () => {
+        // The shapes that wrongly flagged real repos (Twenty CRM / Yarn): vendored .yarn bundle using
+        // new Function, app code calling fetch(), and a template helper using new Function.
+        const legit = repo({
+            'package.json': JSON.stringify({ name: 'app', scripts: { build: 'tsc', prepare: 'husky' } }),
+            '.yarn/releases/yarn-4.9.2.cjs': 'var x = new Function("a", "return eval(a)");',
+            'packages/x/.yarn/releases/yarn-4.9.2.cjs': 'new Function(s, body);',
+            'src/api.ts': `export async function load() { const r = await fetch('https://api.example.com/v1/data'); return r.json(); }`,
+            'src/template.ts': `export const compile = (src: string) => new Function('ctx', src);`,
+        });
+        const r = await selfScan(legit);
+        expect(r.worst).toBe(Verdict.SAFE);
+        expect(r.what).toHaveLength(0); // no alarming narrative
+        expect(r.findings.some((f) => f.file.includes('.yarn'))).toBe(false); // vendored toolchain skipped
+        expect(r.findings.some((f) => /outbound HTTP/i.test(f.label))).toBe(false); // fetch() is normal
+        expect(r.findings.some((f) => /Function\(\) constructor/.test(f.label))).toBe(false); // templating is normal
     });
 
     it('returns SAFE with no findings for a clean repo', async () => {
