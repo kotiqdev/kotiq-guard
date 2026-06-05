@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
 import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
+import { repoScan } from '../core/repo/repo-scan';
 import { getPlan, recordSeen } from '../users';
 import { env } from '../env';
 import { debug } from '../logger';
@@ -28,8 +29,14 @@ async function start(): Promise<void> {
     if (env.authEnabled) {
         if (!env.oauthClientId) throw new Error('AUTH_ENABLED is set but GOOGLE_OAUTH_CLIENT_ID is missing');
         app.addHook('onRequest', async (req, reply) => {
-            // /me resolves the user's tier (incl. Lite, who are NOT allow-listed) → must skip the gate.
-            if (req.method === 'OPTIONS' || req.url === '/health' || req.url.startsWith('/me')) return;
+            // /me (tier) and /repo (deterministic, any verified user) do their own auth → skip the pro-gate.
+            if (
+                req.method === 'OPTIONS' ||
+                req.url === '/health' ||
+                req.url.startsWith('/me') ||
+                req.url.startsWith('/repo')
+            )
+                return;
             const header = req.headers.authorization ?? '';
             const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
             if (!token) return reply.code(401).send({ error: 'missing bearer token' });
@@ -83,6 +90,26 @@ async function start(): Promise<void> {
             debug('/me ✕', (e as Error).message);
             return reply.code(401).send({ error: 'invalid token' });
         }
+    });
+
+    // GET /repo?owner=vitejs&repo=vite → scan a repo's dependency tree (deterministic, any verified user).
+    app.get<{ Querystring: { owner?: string; repo?: string } }>('/repo', async (req, reply) => {
+        if (env.authEnabled) {
+            const header = req.headers.authorization ?? '';
+            const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+            if (!token) return reply.code(401).send({ error: 'missing bearer token' });
+            try {
+                await verifyIdToken(token, env.oauthClientId as string);
+            } catch {
+                return reply.code(401).send({ error: 'invalid token' });
+            }
+        }
+        const { owner, repo } = req.query;
+        if (!owner || !repo) return reply.code(400).send({ error: 'owner and repo are required' });
+        debug('GET /repo', `${owner}/${repo}`);
+        const result = await repoScan(owner, repo);
+        debug('/repo ←', `${owner}/${repo}`, result.worst, `· ${result.withHooks} hook deps`);
+        return result;
     });
 
     // GET /scan?pkg=event-stream@3.3.6  →  VerdictCard + explanation

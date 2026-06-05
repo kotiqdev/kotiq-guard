@@ -136,7 +136,7 @@ function renderBody(view: View, onSignIn: () => void, onSignOut: () => void) {
                     <p style={{ color: C.dim, margin: '8px 0 14px', fontSize: 12 }}>
                         {view.role === 'checking' && (view.note ?? 'Checking your access…')}
                         {view.role === 'pro' && 'Full cloud scan — Gemini on Vertex AI.'}
-                        {view.role === 'lite' && 'On-device scan — Gemini Nano in your browser.'}
+                        {view.role === 'lite' && 'Free deterministic scan. Pro adds AI source analysis + CVE.'}
                     </p>
                     {view.role === 'lite' && (
                         <button style={S.ghost} onClick={() => window.open('https://kotiq.dev', '_blank')}>
