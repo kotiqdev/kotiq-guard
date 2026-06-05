@@ -7,11 +7,15 @@ import { panel, sectionLabel, SEV_COLOR, VERDICT_COLOR } from '../ui/theme';
 
 export function RepoFindings({ result }: { result: RepoResult }) {
     const selfFindings = result.self?.findings ?? [];
+    const fyi = result.self?.fyi ?? [];
     const what = result.self?.what ?? [];
 
     const whatCopy = `Kotiq — ${result.repo} (${result.worst})\nWhat this repo does:\n${what.map((w) => '• ' + w).join('\n')}`;
     const filesCopy = `Kotiq — ${result.repo} (${result.worst})\n${selfFindings
         .map((f) => `[${f.severity}] ${f.file} — ${f.label}${f.detail ? '\n    ' + f.detail : ''}`)
+        .join('\n')}`;
+    const fyiCopy = `Kotiq — ${result.repo} · not auto-run (heads-up)\n${fyi
+        .map((f) => `[${f.severity}] ${f.file} — ${f.label}`)
         .join('\n')}`;
 
     return (
@@ -40,6 +44,25 @@ export function RepoFindings({ result }: { result: RepoResult }) {
                             <code style={{ fontSize: 11, color: '#57606a' }}>{f.file}</code>
                             <div style={{ fontSize: 12, color: '#24292f', marginTop: 1 }}>{f.label}</div>
                             {f.detail && <div style={{ fontSize: 11, color: '#8a929b', marginTop: 1, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>{f.detail}</div>}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {fyi.length > 0 && (
+                <div style={{ ...panel, background: '#f6f8fa', borderLeft: '3px solid #afb8c1' }}>
+                    <BlockHeader
+                        title={<span style={sectionLabel}>Not auto-run · heads-up</span>}
+                        actions={<CopyButton text={fyiCopy} />}
+                    />
+                    <div style={{ fontSize: 11, color: '#8a929b', marginBottom: 6, lineHeight: 1.35 }}>
+                        These files do <b>not</b> run when you open or install the repo, so they don't affect the verdict — but they contain risky code if you later run them.
+                    </div>
+                    {fyi.map((f, i) => (
+                        <div key={i} style={{ marginBottom: 7 }}>
+                            <span style={{ fontWeight: 700, color: SEV_COLOR[f.severity] ?? '#6e7781', fontSize: 11 }}>{f.severity}</span>{' '}
+                            <code style={{ fontSize: 11, color: '#57606a' }}>{f.file}</code>
+                            <div style={{ fontSize: 12, color: '#24292f', marginTop: 1 }}>{f.label}</div>
                         </div>
                     ))}
                 </div>

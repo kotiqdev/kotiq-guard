@@ -5,9 +5,10 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
-import { repoExplain } from '../agent/repo-explain';
+import { escalateToVerdict, repoExplain } from '../agent/repo-explain';
 import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
 import { repoScan } from '../core/repo/repo-scan';
+import { worseVerdict } from '../core/repo/verdict';
 import { getPlan, recordSeen } from '../users';
 import { env } from '../env';
 import { debug } from '../logger';
@@ -185,9 +186,10 @@ async function start(): Promise<void> {
             if (ac.signal.aborted) return { aborted: true };
 
             debug('GET /repo/explain', `${owner}/${repo}`, '·', result.worst);
-            const ai = await repoExplain(result, { signal: ac.signal });
-            debug(`/repo/explain ← ${Date.now() - t0}ms · grounded=${ai.grounded}`);
-            return { explanation: ai.explanation, grounded: ai.grounded, worst: result.worst };
+            const ai = await repoExplain(owner, repo, result, { signal: ac.signal });
+            const worst = worseVerdict(result.worst, escalateToVerdict(ai.escalate)); // escalate-only
+            debug(`/repo/explain ← ${Date.now() - t0}ms · grounded=${ai.grounded} · escalate=${ai.escalate}`);
+            return { explanation: ai.explanation, grounded: ai.grounded, worst };
         } catch (e) {
             if (ac.signal.aborted) return { aborted: true };
             debug('/repo/explain ✕', (e as Error).message);

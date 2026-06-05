@@ -14,6 +14,7 @@
 
 import { Severity } from '../models/enums';
 import { scan } from '../static-analysis/web3-signatures';
+import { buildScanMap } from './mapper';
 import { maxSeverityRank, SEV_RANK, verdictForSeverity } from './verdict';
 import type { Verdict } from '../models/enums';
 
@@ -39,6 +40,12 @@ export interface RepoSelfResult {
     filesScanned: number;
     /** Plain-language, developer-facing bullets: "what this repo does". Empty when nothing fired. */
     what: string[];
+    /**
+     * Heads-up notes on code that does NOT auto-run (DEAD per the Mapper). High-confidence dangerous
+     * patterns only. INFORMATIONAL: never drives `worst` — it's a security review courtesy, not a
+     * "do not install" signal. A developer who later edits/runs these files deserves the warning.
+     */
+    fyi: RepoSelfFinding[];
 }
 
 /** What the scanner can read. `read` returns file text, or null if absent/too big. */
@@ -53,14 +60,6 @@ const LIFECYCLE = [
     'preinstall', 'install', 'postinstall', 'prepare', 'prepublish', 'prepublishOnly', 'prepack',
 ] as const;
 const RUNS_LOCAL_CODE = /\b(?:node|ts-node|tsx|bun|deno|babel-node|nodemon)\b|\.(?:js|cjs|mjs|ts|sh)\b/;
-const MAX_SOURCE_FILES = 40;
-const SOURCE_EXT = /\.(?:js|cjs|mjs|ts|cts|mts)$/;
-// Vendored toolchains / generated / bundled code legitimately use eval/new Function — never scan them.
-const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|build|out|lib|coverage|\.next|\.nuxt|\.yarn|\.pnp|vendor|third_party|__generated__|generated)\//;
-const SKIP_FILE = /\.(?:min|bundle|chunk)\.(?:js|cjs|mjs)$|(?:^|\/)\.pnp\.[\w.]+$|(?:^|\/)yarn-[\d.]+\.cjs$/;
-// Test / fixture / example files legitimately contain malware-shaped strings (a security tool's own
-// tests + signature data trip every pattern) — never scan them as source.
-const TEST_FILE = /(?:^|\/)(?:tests?|__tests__|__mocks__|fixtures?|examples?)\/|\.(?:spec|test|fixture)\.[cm]?[jt]sx?$/i;
 
 // Tolerant JSON parse: VS Code config files allow // and /* */ comments and trailing commas.
 function looseJsonParse(text: string): unknown {
@@ -234,18 +233,16 @@ function checkIdea(path: string, text: string, out: RepoSelfFinding[]): void {
 }
 
 // --- source files -------------------------------------------------------------------------------
-// Real exfil = process.env passed INTO an outbound request, e.g. axios.post(url, { ...process.env }).
-// NOT a bare { ...process.env } spread — that is the normal way to forward env to a child process
-// (spawn(node, args, { env: { ...process.env } })), which thousands of legit dev scripts do.
+// Real exfil = process.env spread INTO an outbound request (the env object handed to an HTTP call).
+// NOT a bare process.env spread — that is the normal way to forward env to a child process
+// (spawn with env set to a process.env spread), which thousands of legit dev scripts do.
 const ENV_EXFIL_RE =
     /(?:fetch|axios\s*\.\s*(?:post|get|put|patch)|\.\s*(?:post|get|put))\s*\([^)]*\.\.\.\s*process\.env/;
 
 function checkSource(path: string, text: string, out: RepoSelfFinding[]): void {
-    if (TEST_FILE.test(path)) return; // tests / fixtures intentionally contain malware-shaped strings
-    // The web3/wallet/curl signatures are for install-hook COMMANDS (where Lazarus hides payloads),
-    // NOT arbitrary repo source — there they are far too noisy (a security tool's own detection code,
-    // wallet libraries, docs all contain the literals). In source we flag only the specific,
-    // high-confidence exfil pattern: process.env passed straight into an outbound request.
+    // Only auto-run-reachable (LIVE) files reach here. We flag the high-confidence exfil pattern:
+    // process.env passed straight into an outbound request. (Wallet/curl signatures stay for hook
+    // commands — in arbitrary source they're too noisy: security tools, tests, docs all contain them.)
     if (ENV_EXFIL_RE.test(text)) {
         add(out, {
             kind: 'source',
@@ -254,6 +251,44 @@ function checkSource(path: string, text: string, out: RepoSelfFinding[]): void {
             severity: Severity.HIGH,
         });
     }
+}
+
+// --- dead-code FYI audit ------------------------------------------------------------------------
+// Dead code does not auto-run on open/install, so it CANNOT drive the verdict. But if a developer
+// later opens or runs one of these files, high-confidence dangerous behaviour is worth a heads-up.
+// Conservative on purpose (only the two patterns we trust with near-zero false positives) and we
+// skip vendored/built output so the notes stay signal, not noise.
+// Skip vendored/built output AND test files/fixtures for the courtesy pass. Skipping tests is SAFE
+// here: FYI never drives the verdict, and a test file actually reached by a trigger is LIVE (scanned
+// for the verdict) — so this only suppresses noise from inert malware-pattern samples in test suites.
+const DEAD_AUDIT_SKIP =
+    /(?:^|\/)(?:node_modules|\.yarn|\.pnp|vendor|dist|build|out|coverage|\.next|\.git|__tests__|__mocks__|fixtures|test|tests)\/|\.(?:spec|test)\.[cm]?[jt]sx?$/;
+const MAX_DEAD_AUDIT = 200; // cap files read for the courtesy pass (dead set can be huge)
+
+// eval / new Function whose body comes from request/response data → builds & runs remote-controlled
+// code. The property-access form (response.data, req.body) is what separates it from legit templating
+// (new Function('ctx', src)), which we must never flag.
+const REMOTE_EXEC_RE = /\b(?:eval|new\s+Function)\s*\([\s\S]{0,120}?\b(?:res|resp|response|req|request)\b\s*\.\s*\w+/;
+
+function auditDeadFile(path: string, text: string): RepoSelfFinding[] {
+    const out: RepoSelfFinding[] = [];
+    if (ENV_EXFIL_RE.test(text)) {
+        out.push({
+            kind: 'source',
+            file: path,
+            label: 'not auto-run, but contains code that sends environment variables to a remote host',
+            severity: Severity.HIGH,
+        });
+    }
+    if (REMOTE_EXEC_RE.test(text)) {
+        out.push({
+            kind: 'source',
+            file: path,
+            label: 'not auto-run, but builds and executes code from request/response data (eval / new Function)',
+            severity: Severity.HIGH,
+        });
+    }
+    return out;
 }
 
 // --- .env: base64-encoded remote URL ------------------------------------------------------------
@@ -280,22 +315,6 @@ function checkEnv(path: string, text: string, out: RepoSelfFinding[]): void {
             });
         }
     }
-}
-
-// Pick which source files to read: real code only, capped, hook target prioritised.
-function pickSourceFiles(paths: string[], pkgMain?: string): string[] {
-    const candidates = paths.filter(
-        (p) => SOURCE_EXT.test(p) && !SKIP_DIR.test('/' + p) && !SKIP_FILE.test(p) && !TEST_FILE.test(p),
-    );
-    const score = (p: string): number => {
-        if (pkgMain && p === pkgMain) return 0;
-        if (/^server\//.test(p)) return 1;
-        if (/^src\//.test(p)) return 2;
-        if (/^(?:scripts|bin)\//.test(p)) return 1;
-        if (!p.includes('/')) return 1; // root-level files
-        return 4;
-    };
-    return candidates.sort((a, b) => score(a) - score(b)).slice(0, MAX_SOURCE_FILES);
 }
 
 // Turn findings into developer-facing "what this is" bullets. The alarming narrative is produced
@@ -329,47 +348,62 @@ function explain(findings: RepoSelfFinding[]): string[] {
 
 export async function selfScan(files: RepoFiles): Promise<RepoSelfResult> {
     const out: RepoSelfFinding[] = [];
-    let scanned = 0;
     const have = new Set(files.paths);
 
-    const readCount = async (path: string): Promise<string | null> => {
-        const t = await files.read(path);
-        if (t != null) scanned++;
-        return t;
-    };
-
-    // package.json (own hooks) + find `main` for source prioritisation.
-    let pkgMain: string | undefined;
+    // Config / trigger checks (specific files, always read).
     if (have.has('package.json')) {
-        const text = await readCount('package.json');
-        if (text) {
-            checkPackageJson(text, out);
-            const pkg = looseJsonParse(text) as { main?: string } | null;
-            if (typeof pkg?.main === 'string') pkgMain = pkg.main.replace(/^\.\//, '');
-        }
+        const text = await files.read('package.json');
+        if (text) checkPackageJson(text, out);
     }
-
     if (have.has('.vscode/tasks.json')) {
-        const text = await readCount('.vscode/tasks.json');
+        const text = await files.read('.vscode/tasks.json');
         if (text) checkVscodeTasks(text, out);
     }
     if (have.has('.vscode/settings.json')) {
-        const text = await readCount('.vscode/settings.json');
+        const text = await files.read('.vscode/settings.json');
         if (text) checkVscodeSettings(text, out);
     }
     for (const p of files.paths.filter((p) => p.startsWith('.idea/'))) {
-        const text = await readCount(p);
+        const text = await files.read(p);
         if (text) checkIdea(p, text, out);
     }
     for (const p of files.paths.filter((p) => /(?:^|\/)\.env(?:\.[\w.-]+)?$/.test(p))) {
-        const text = await readCount(p);
+        const text = await files.read(p);
         if (text) checkEnv(p, text, out);
     }
-    for (const p of pickSourceFiles(files.paths, pkgMain)) {
-        const text = await readCount(p);
+
+    // Reachability: scan ONLY the source that auto-runs (LIVE). Dead code is inert for open/install,
+    // so it never drives the verdict — this is what kills false positives on security tools/tests AND
+    // closes the "hide in a test folder" evasion (a test file run by a trigger IS live → scanned).
+    const map = await buildScanMap(files);
+    for (const p of map.live) {
+        const text = await files.read(p);
         if (text) checkSource(p, text, out);
+    }
+    // Fail-loud: auto-run code we couldn't follow (dynamic require / unresolved import) = treat as risky.
+    for (const u of map.unresolved) {
+        add(out, {
+            kind: 'source',
+            file: u.split(' → ')[0],
+            label: 'auto-run code loads code dynamically — Kotiq could not fully analyze it',
+            severity: Severity.MEDIUM,
+            detail: u,
+        });
+    }
+
+    // Courtesy pass over DEAD code: high-confidence dangerous patterns only, capped, vendored skipped.
+    // These NEVER enter `out`, so they cannot move the verdict — they're informational heads-up notes.
+    const fyi: RepoSelfFinding[] = [];
+    let audited = 0;
+    for (const p of map.dead) {
+        if (audited >= MAX_DEAD_AUDIT) break;
+        if (DEAD_AUDIT_SKIP.test(p)) continue;
+        const text = await files.read(p);
+        if (text == null) continue;
+        audited++;
+        for (const f of auditDeadFile(p, text)) add(fyi, f);
     }
 
     const worst = verdictForSeverity(maxSeverityRank(out.map((f) => f.severity)));
-    return { findings: out, worst, filesScanned: scanned, what: explain(out) };
+    return { findings: out, worst, filesScanned: map.live.length, what: explain(out), fyi };
 }

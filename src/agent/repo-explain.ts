@@ -1,22 +1,41 @@
-// Pro repo-scan explainer — the AI layer over the deterministic repo self-scan.
+// Pro repo brain — the AI layer over the deterministic scan.
 //
-// The self-scan findings are authoritative facts. This adds a small agentic loop on top:
-//   repoAnalyst — narrates, in plain language, what the repo does and the attacker's goal,
-//                 grounded STRICTLY in the findings.
-//   repoCritic  — checks the narration invented nothing; on fail, sends it back (≤ maxTries).
-// The deterministic findings remain the floor; the narrative only adds context, never lowers it.
+//   repoAnalyst — READS the code that auto-runs on open/install (LIVE), says what it really does,
+//                 de-obfuscates, and flags malicious behaviour the signatures missed. Escalate-only.
+//   repoCritic  — verifies the analysis is grounded in the actual code; on fail, sends it back (≤ N).
+//
+// The deterministic verdict is the floor: the analyst can only RAISE it (via `escalate`), never lower.
 
 import type { RunnableConfig } from '@langchain/core/runnables';
 
 import { debug } from '../logger';
 import { makeModel } from './llm/model';
 import { agents, render } from './prompts';
+import { Verdict } from '../core/models/enums';
+import { buildScanMap } from '../core/repo/mapper';
+import { openRepo } from '../core/repo/repo-scan';
 import type { DepFinding, RepoResult } from '../core/repo/repo-scan';
-import type { RepoSelfFinding } from '../core/repo/self-scan';
+import type { RepoFiles, RepoSelfFinding } from '../core/repo/self-scan';
+
+export type Escalate = 'none' | 'needs_review' | 'suspicious' | 'malicious';
 
 export interface RepoExplainResult {
     explanation: string;
     grounded: boolean;
+    escalate: Escalate;
+}
+
+const LIVE_BUDGET = 24_000; // total chars of live code fed to the model
+const PER_FILE_CAP = 4_000;
+
+export function escalateToVerdict(e: Escalate): Verdict {
+    return e === 'malicious'
+        ? Verdict.MALICIOUS
+        : e === 'suspicious'
+          ? Verdict.SUSPICIOUS
+          : e === 'needs_review'
+            ? Verdict.NEEDS_REVIEW
+            : Verdict.SAFE;
 }
 
 // First {...} JSON object out of a possibly <think>-wrapped reply.
@@ -37,20 +56,43 @@ function selfLine(f: RepoSelfFinding): string {
 function depLine(d: DepFinding): string {
     return `- ${d.verdict} · dependency ${d.name}@${d.version} · ${d.findings.map((x) => x.label).join('; ')}`;
 }
-
 function findingsBlock(result: RepoResult): string {
-    const self = (result.self?.findings ?? []).map(selfLine);
-    const deps = result.flagged.map(depLine);
-    const lines = [...self, ...deps];
+    const lines = [...(result.self?.findings ?? []).map(selfLine), ...result.flagged.map(depLine)];
     return lines.length ? lines.join('\n') : '(no risky behaviour detected)';
 }
 
-export async function repoExplain(result: RepoResult, config?: RunnableConfig): Promise<RepoExplainResult> {
+// Read the auto-run (LIVE) source for the analyst, within a char budget (truncate big files).
+async function readLiveCode(files: RepoFiles, live: string[]): Promise<string> {
+    const out: string[] = [];
+    let used = 0;
+    for (const p of live) {
+        if (used >= LIVE_BUDGET) {
+            out.push(`… (${live.length - out.length} more live files omitted)`);
+            break;
+        }
+        const t = await files.read(p);
+        if (t == null) continue;
+        const slice = t.length > PER_FILE_CAP ? `${t.slice(0, PER_FILE_CAP)}\n… (truncated)` : t;
+        out.push(`=== ${p} ===\n${slice}`);
+        used += slice.length;
+    }
+    return out.join('\n\n') || '(no auto-run code reachable)';
+}
+
+function normEscalate(v: unknown): Escalate {
+    return v === 'malicious' || v === 'suspicious' || v === 'needs_review' ? v : 'none';
+}
+
+export async function repoExplain(
+    owner: string,
+    repo: string,
+    result: RepoResult,
+    config?: RunnableConfig,
+): Promise<RepoExplainResult> {
     const findings = findingsBlock(result);
     const maxTries = agents.repoCritic.maxTries ?? 2;
 
-    // Bail out between LLM calls if the caller aborted (the in-call abort is handled by the model's
-    // streaming loop; this stops us starting the critic / a retry after a cancel).
+    // Bail between LLM calls if the caller aborted (in-call abort is handled by the model stream).
     const ensureLive = (): void => {
         if (config?.signal?.aborted) {
             const e = new Error('aborted');
@@ -59,8 +101,19 @@ export async function repoExplain(result: RepoResult, config?: RunnableConfig): 
         }
     };
 
+    // Read the code that actually auto-runs — this is what the analyst reasons over.
+    let liveCode = '(could not read repository files)';
+    try {
+        const files = await openRepo(owner, repo);
+        const map = await buildScanMap(files);
+        liveCode = await readLiveCode(files, map.live);
+    } catch (e) {
+        debug('repoExplain: could not read live code ·', (e as Error).message);
+    }
+
     let explanation = '';
     let grounded = false;
+    let escalate: Escalate = 'none';
     let retryNote = '';
 
     for (let attempt = 1; attempt <= maxTries; attempt++) {
@@ -69,26 +122,33 @@ export async function repoExplain(result: RepoResult, config?: RunnableConfig): 
             repo: result.repo,
             worst: result.worst,
             findings,
+            liveCode,
             retryNote,
         });
         debug('repoAnalyst → calling LLM (attempt', String(attempt) + ')');
         const t0 = Date.now();
         const res = await makeModel(agents.repoAnalyst.temperature).invoke(analystPrompt, config);
-        explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-        debug(`repoAnalyst ← done (${Date.now() - t0}ms)`);
+        const obj = extractJson(String(res.content));
+        explanation = (typeof obj?.summary === 'string' ? obj.summary : String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '')).trim();
+        escalate = normEscalate(obj?.escalate);
+        debug(`repoAnalyst ← done (${Date.now() - t0}ms) · escalate=${escalate}`);
 
         ensureLive();
-        const criticPrompt = render(agents.repoCritic.prompt, { findings, explanation });
+        const criticPrompt = render(agents.repoCritic.prompt, {
+            findings,
+            liveCode,
+            analysis: JSON.stringify(obj ?? { summary: explanation }),
+        });
         const cres = await makeModel(agents.repoCritic.temperature).invoke(criticPrompt, config);
-        const obj = extractJson(String(cres.content));
-        if (obj?.ok !== false) {
+        const cobj = extractJson(String(cres.content));
+        if (cobj?.ok !== false) {
             grounded = true;
             debug('repoCritic ← grounded');
             break;
         }
-        retryNote = `\n\nA reviewer flagged your previous explanation: "${String(obj.issue ?? '')}". Correct it, using ONLY the findings.`;
-        debug('repoCritic ← not grounded →', String(obj.issue ?? ''), '(retry)');
+        retryNote = `\n\nA reviewer flagged your previous analysis: "${String(cobj.issue ?? '')}". Correct it, using ONLY the code/findings.`;
+        debug('repoCritic ← not grounded →', String(cobj.issue ?? ''), '(retry)');
     }
 
-    return { explanation, grounded };
+    return { explanation, grounded, escalate };
 }

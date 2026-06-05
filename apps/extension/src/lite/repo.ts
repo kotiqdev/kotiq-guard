@@ -35,6 +35,8 @@ export interface RepoSelfResult {
     filesScanned: number;
     // Plain-language, developer-facing "what this repo does" bullets.
     what: string[];
+    // Heads-up notes on code that does NOT auto-run (informational; never drives the verdict).
+    fyi?: RepoSelfFinding[];
 }
 
 export interface RepoResult {

