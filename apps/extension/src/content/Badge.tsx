@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 
 import { REQUIRE_AUTH } from '../config';
 import type { LiteResult } from '../lite/engine';
-import type { NanoStatus } from '../lite/nano';
 import { loadSession, SESSION_KEY, type Session } from '../session';
 
 const COLORS: Record<string, string> = {
@@ -107,56 +106,23 @@ function SignInBadge({ onSignIn, busy, error }: { onSignIn: () => void; busy: bo
 }
 
 // Shown for a valid Google user who isn't allow-listed (Pro). Runs the LIGHT engine in the browser
-// (install-hook commands from the registry + signatures) and offers an on-device Gemini Nano
-// explanation — only when Nano is available. Same deterministic floor as Pro; lighter analysis.
+// (install-hook commands from the registry + signatures). Deterministic only — AI is a Pro feature.
 function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | null }) {
     const [open, setOpen] = useState(false);
     const [result, setResult] = useState<LiteResult | null>(null);
-    const [nano, setNano] = useState<NanoStatus | null>(null);
-    const [explaining, setExplaining] = useState(false);
-    const [explanation, setExplanation] = useState<string | null>(null);
-    const [downloadPct, setDownloadPct] = useState<number | null>(null);
-
-    // Model-download progress arrives via storage (background → here).
-    useEffect(() => {
-        const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
-            if (area !== 'local' || !('nanoProgress' in changes)) return;
-            const v = changes.nanoProgress.newValue;
-            setDownloadPct(typeof v === 'number' ? v : null);
-        };
-        chrome.storage.onChanged.addListener(onChange);
-        return () => chrome.storage.onChanged.removeListener(onChange);
-    }, []);
 
     useEffect(() => {
         void chrome.runtime
             .sendMessage({ type: 'liteScan', pkg })
             .then((r: { result?: LiteResult }) => setResult(r?.result ?? null))
             .catch(() => setResult(null));
-        void chrome.runtime
-            .sendMessage({ type: 'nanoStatus' })
-            .then((r: { status?: NanoStatus }) => setNano(r?.status ?? 'unavailable'))
-            .catch(() => setNano('unavailable'));
     }, [pkg]);
 
     const color = (result && COLORS[result.verdict]) || '#9aa0a6';
     const version = pageVersion ?? result?.version ?? null;
-    const nanoOk = nano === 'available' || nano === 'downloadable' || nano === 'downloading';
-
-    async function explain() {
-        if (!result) return;
-        setExplaining(true);
-        try {
-            const r = (await chrome.runtime.sendMessage({ type: 'liteExplain', result })) as { text?: string | null };
-            setExplanation(r?.text ?? 'On-device AI could not produce an explanation.');
-        } finally {
-            setExplaining(false);
-        }
-    }
 
     return (
         <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
-            <style>{BTN_CSS}</style>
             <div
                 onClick={() => setOpen((o) => !o)}
                 style={{ padding: '8px 12px', borderRadius: 8, color: '#fff', fontWeight: 600, background: color, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}
@@ -166,7 +132,6 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, background: 'rgba(255,255,255,.25)', borderRadius: 999, padding: '1px 6px' }}>
                     LITE
                 </span>
-                {downloadPct != null && <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.9 }}>· ⏳ {downloadPct}%</span>}
             </div>
             {open && result && (
                 <div style={{ marginTop: 6, width: 320, background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)', overflow: 'hidden' }}>
@@ -174,40 +139,9 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                         <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 4 }}>What Kotiq checked</div>
                         {result.note}
                     </div>
-                    <div style={{ padding: '10px 12px' }}>
-                        {nanoOk ? (
-                            <>
-                                <button type="button" className="kotiq-explain" disabled={explaining} onClick={explain}>
-                                    {explaining
-                                        ? downloadPct != null
-                                            ? `⏳ Downloading model… ${downloadPct}%`
-                                            : '⏳ Thinking on-device…'
-                                        : '⚡ Explain on-device'}
-                                </button>
-                                <div style={{ marginTop: 6, color: '#8a929b', fontSize: 11 }}>
-                                    Runs Gemini Nano in your browser — private, nothing leaves your device. First use
-                                    downloads the model once.
-                                </div>
-                                {explanation && (
-                                    <>
-                                        <div style={{ marginTop: 10, color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                                            {explanation}
-                                        </div>
-                                        <div style={{ marginTop: 8, color: '#8a929b', fontSize: 11, fontStyle: 'italic' }}>
-                                            On-device AI — a quick read, can be wrong. The verdict is from deterministic checks.
-                                        </div>
-                                    </>
-                                )}
-                            </>
-                        ) : (
-                            <div style={{ color: '#8a929b', fontSize: 12 }}>
-                                On-device AI isn't available on this device — the verdict above still stands.
-                            </div>
-                        )}
-                        <div style={{ marginTop: 10, color: '#8a929b', fontSize: 11 }}>
-                            Pro runs the full cloud analysis — multi-agent Gemini + a known-CVE check. Request access from
-                            the Kotiq toolbar icon.
-                        </div>
+                    <div style={{ padding: '10px 12px', color: '#8a929b', fontSize: 11 }}>
+                        Pro runs the full cloud analysis — multi-agent Gemini reads the script source + a known-CVE check.
+                        Request access from the Kotiq toolbar icon.
                     </div>
                 </div>
             )}
