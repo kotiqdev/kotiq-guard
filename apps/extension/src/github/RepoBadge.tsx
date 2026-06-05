@@ -11,6 +11,14 @@ const COLORS: Record<string, string> = {
     MALICIOUS: '#cf222e',
 };
 
+const SEV_COLOR: Record<string, string> = {
+    INFO: '#6e7781',
+    LOW: '#6e7781',
+    MEDIUM: '#bf8700',
+    HIGH: '#bc4c00',
+    CRITICAL: '#cf222e',
+};
+
 // First path segments on github.com that are NOT a user/org repo root.
 const RESERVED = new Set([
     'features', 'marketplace', 'settings', 'orgs', 'notifications', 'explore', 'topics', 'sponsors',
@@ -83,16 +91,46 @@ export function RepoBadge() {
 
     const color = COLORS[result.worst] ?? '#6e7781';
     const panel = { padding: '10px 12px', borderBottom: '1px solid #eaeef2' } as const;
+    const selfFindings = result.self?.findings ?? [];
+    const what = result.self?.what ?? [];
+    const subtitle = selfFindings.length
+        ? `· ${selfFindings.length} repo risk${selfFindings.length > 1 ? 's' : ''}`
+        : `· ${result.withHooks} hook deps`;
 
     return (
         <div style={shell}>
             <div onClick={() => setOpen((o) => !o)} style={pill(color)}>
                 🐱 Kotiq: {result.worst}
-                <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>· {result.withHooks} hook deps</span>
+                <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>{subtitle}</span>
             </div>
 
             {open && (
-                <div style={{ marginTop: 6, width: 360, background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)', overflow: 'hidden' }}>
+                <div style={{ marginTop: 6, width: 360, maxHeight: '70vh', overflowY: 'auto', background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)' }}>
+                    {what.length > 0 && (
+                        <div style={{ ...panel, background: '#fff8f8' }}>
+                            <div style={{ color: COLORS.MALICIOUS, fontWeight: 700, marginBottom: 6 }}>⚠ What this repo does</div>
+                            {what.map((w, i) => (
+                                <div key={i} style={{ fontSize: 12, color: '#3d2222', marginBottom: 5, lineHeight: 1.35 }}>• {w}</div>
+                            ))}
+                        </div>
+                    )}
+
+                    {selfFindings.length > 0 && (
+                        <div style={panel}>
+                            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 6 }}>
+                                Repo files
+                            </div>
+                            {selfFindings.map((f, i) => (
+                                <div key={i} style={{ marginBottom: 7 }}>
+                                    <span style={{ fontWeight: 700, color: SEV_COLOR[f.severity] ?? '#6e7781', fontSize: 11 }}>{f.severity}</span>{' '}
+                                    <code style={{ fontSize: 11, color: '#57606a' }}>{f.file}</code>
+                                    <div style={{ fontSize: 12, color: '#24292f', marginTop: 1 }}>{f.label}</div>
+                                    {f.detail && <div style={{ fontSize: 11, color: '#8a929b', marginTop: 1, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>{f.detail}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div style={{ ...panel, color: '#57606a' }}>
                         <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 4 }}>
                             Dependency scan · {result.repo}
@@ -117,7 +155,7 @@ export function RepoBadge() {
                     )}
 
                     <div style={{ padding: '10px 12px', color: '#8a929b', fontSize: 11 }}>
-                        Scanned on Kotiq's server — install-hook commands of direct deps. Pro adds source + known CVEs.
+                        Scanned on Kotiq's server, passively — the repo's own scripts, .vscode tasks, source &amp; .env, plus each dependency's install hooks. Nothing is executed.
                     </div>
                 </div>
             )}

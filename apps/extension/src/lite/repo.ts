@@ -13,6 +13,30 @@ export interface DepFinding {
     verdict: Verdict;
 }
 
+export type SelfFindingKind =
+    | 'install_hook'
+    | 'vscode_task'
+    | 'vscode_settings'
+    | 'idea_runconfig'
+    | 'source'
+    | 'env_secret';
+
+export interface RepoSelfFinding {
+    kind: SelfFindingKind;
+    file: string;
+    label: string;
+    severity: Severity;
+    detail?: string;
+}
+
+export interface RepoSelfResult {
+    findings: RepoSelfFinding[];
+    worst: Verdict;
+    filesScanned: number;
+    // Plain-language, developer-facing "what this repo does" bullets.
+    what: string[];
+}
+
 export interface RepoResult {
     found: boolean;
     repo: string;
@@ -20,6 +44,8 @@ export interface RepoResult {
     scanned: number;
     withHooks: number;
     flagged: DepFinding[];
+    // The repo's OWN files (tasks.json folderOpen, install hooks, source, .env). Null on error.
+    self: RepoSelfResult | null;
     worst: Verdict;
     error?: string;
 }
