@@ -58,10 +58,9 @@ const SOURCE_EXT = /\.(?:js|cjs|mjs|ts|cts|mts)$/;
 // Vendored toolchains / generated / bundled code legitimately use eval/new Function — never scan them.
 const SKIP_DIR = /(?:^|\/)(?:node_modules|dist|build|out|lib|coverage|\.next|\.nuxt|\.yarn|\.pnp|vendor|third_party|__generated__|generated)\//;
 const SKIP_FILE = /\.(?:min|bundle|chunk)\.(?:js|cjs|mjs)$|(?:^|\/)\.pnp\.[\w.]+$|(?:^|\/)yarn-[\d.]+\.cjs$/;
-// Signatures that are normal in ordinary application source — flagged only inside install hooks /
-// auto-run paths, NOT as a risk just for appearing in a source file:
-//   making HTTP calls, using eval / new Function (templating, parsers), `node -e`.
-const SOURCE_SKIP = new Set(['outbound_http', 'eval_call', 'function_constructor', 'node_dash_e']);
+// Test / fixture / example files legitimately contain malware-shaped strings (a security tool's own
+// tests + signature data trip every pattern) — never scan them as source.
+const TEST_FILE = /(?:^|\/)(?:tests?|__tests__|__mocks__|fixtures?|examples?)\/|\.(?:spec|test|fixture)\.[cm]?[jt]sx?$/i;
 
 // Tolerant JSON parse: VS Code config files allow // and /* */ comments and trailing commas.
 function looseJsonParse(text: string): unknown {
@@ -242,16 +241,11 @@ const ENV_EXFIL_RE =
     /(?:fetch|axios\s*\.\s*(?:post|get|put|patch)|\.\s*(?:post|get|put))\s*\([^)]*\.\.\.\s*process\.env/;
 
 function checkSource(path: string, text: string, out: RepoSelfFinding[]): void {
-    for (const hit of scan(text)) {
-        if (SOURCE_SKIP.has(hit.name)) continue; // normal in ordinary app source — not a risk by itself
-        add(out, {
-            kind: 'source',
-            file: path,
-            label: hit.label,
-            severity: hit.severity,
-            detail: hit.snippet.slice(0, 160),
-        });
-    }
+    if (TEST_FILE.test(path)) return; // tests / fixtures intentionally contain malware-shaped strings
+    // The web3/wallet/curl signatures are for install-hook COMMANDS (where Lazarus hides payloads),
+    // NOT arbitrary repo source — there they are far too noisy (a security tool's own detection code,
+    // wallet libraries, docs all contain the literals). In source we flag only the specific,
+    // high-confidence exfil pattern: process.env passed straight into an outbound request.
     if (ENV_EXFIL_RE.test(text)) {
         add(out, {
             kind: 'source',
@@ -291,7 +285,7 @@ function checkEnv(path: string, text: string, out: RepoSelfFinding[]): void {
 // Pick which source files to read: real code only, capped, hook target prioritised.
 function pickSourceFiles(paths: string[], pkgMain?: string): string[] {
     const candidates = paths.filter(
-        (p) => SOURCE_EXT.test(p) && !SKIP_DIR.test('/' + p) && !SKIP_FILE.test(p),
+        (p) => SOURCE_EXT.test(p) && !SKIP_DIR.test('/' + p) && !SKIP_FILE.test(p) && !TEST_FILE.test(p),
     );
     const score = (p: string): number => {
         if (pkgMain && p === pkgMain) return 0;
