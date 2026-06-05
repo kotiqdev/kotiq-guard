@@ -25,7 +25,7 @@ const EnvSchema = z.object({
     USERS_STORE: z.enum(['file', 'firestore']).default('file'),
     USERS_FILE: z.string().default('data/users.json'),
     // Optional GitHub token for the repo scanner: lifts the 60/hr unauthenticated rate limit to
-    // 5000/hr and unlocks PRIVATE repos (e.g. an inert malware fixture). Read-only; never required.
+    // 5000/hr and lets it read private repos. Read-only; never required.
     GITHUB_TOKEN: z.string().optional(),
     PORT: z.coerce.number().default(8080),
 });

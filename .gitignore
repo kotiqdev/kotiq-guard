@@ -17,12 +17,6 @@ data/users.json
 .claude
 .idea
 .vscode
-
-# terraform — state can hold sensitive values; .terraform/ is downloaded plugins.
-# NOTE: .terraform.lock.hcl is intentionally NOT ignored — it must be committed.
-.terraform/
-*.tfstate
-*.tfstate.*
 crash.log
 
 # extension signing key — pins the extension id; keep private
