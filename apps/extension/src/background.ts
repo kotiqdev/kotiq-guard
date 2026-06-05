@@ -15,7 +15,8 @@ type Msg =
     | { type: 'explain'; pkg: string; from?: string }
     | { type: 'cancel' }
     | { type: 'liteScan'; pkg: string }
-    | { type: 'repoScan'; owner: string; repo: string };
+    | { type: 'repoScan'; owner: string; repo: string }
+    | { type: 'repoExplain'; owner: string; repo: string };
 
 let explainAbort: AbortController | null = null;
 
@@ -77,6 +78,22 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                     const url = `${API_BASE}/repo?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}`;
                     const res = await fetch(url, { headers });
                     sendResponse({ ok: res.ok, status: res.status, result: res.ok ? await res.json() : null });
+                    break;
+                }
+                case 'repoExplain': {
+                    // Pro: AI narrative over the repo findings (analyst ⇄ critic on the backend).
+                    explainAbort = new AbortController();
+                    try {
+                        const session = await loadSession();
+                        const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
+                        const url = `${API_BASE}/repo/explain?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}`;
+                        const res = await fetch(url, { headers, signal: explainAbort.signal });
+                        sendResponse({ ok: res.ok, status: res.status, result: res.ok ? await res.json() : null });
+                    } catch (e) {
+                        sendResponse((e as Error).name === 'AbortError' ? { aborted: true } : { ok: false, error: (e as Error).message });
+                    } finally {
+                        explainAbort = null;
+                    }
                     break;
                 }
                 default:

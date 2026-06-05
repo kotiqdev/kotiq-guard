@@ -3,6 +3,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
 
 import { guardGraph } from '../agent/graph/guard-graph';
+import { repoExplain } from '../agent/repo-explain';
 import { decodeIdTokenUnverified, verifyIdToken } from '../auth/verify';
 import { repoScan } from '../core/repo/repo-scan';
 import { getPlan, recordSeen } from '../users';
@@ -110,6 +111,50 @@ async function start(): Promise<void> {
         const result = await repoScan(owner, repo);
         debug('/repo ←', `${owner}/${repo}`, result.worst, `· ${result.withHooks} hook deps`);
         return result;
+    });
+
+    // GET /repo/explain?owner=&repo= → Pro: an AI narrative (analyst ⇄ critic) over the repo findings.
+    app.get<{ Querystring: { owner?: string; repo?: string } }>('/repo/explain', async (req, reply) => {
+        const { owner, repo } = req.query;
+        if (!owner || !repo) return reply.code(400).send({ error: 'owner and repo are required' });
+
+        // Pro gate: the AI layer is a paid feature. (Local dev with auth off → allowed.)
+        if (env.authEnabled) {
+            const header = req.headers.authorization ?? '';
+            const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+            if (!token) return reply.code(401).send({ error: 'missing bearer token' });
+            try {
+                const id = await verifyIdToken(token, env.oauthClientId as string);
+                const plan = await getPlan(id);
+                if (plan !== 'pro') return reply.code(403).send({ error: 'pro_required' });
+            } catch {
+                return reply.code(401).send({ error: 'invalid token' });
+            }
+        }
+
+        const result = await repoScan(owner, repo);
+        if (!result.found) return reply.code(404).send({ error: result.error ?? 'not a Node repo' });
+
+        const hasRisk = (result.self?.findings.length ?? 0) > 0 || result.flagged.length > 0;
+        if (!hasRisk) {
+            return { explanation: "Kotiq found no risky behaviour in this repository's own files or its dependencies' install hooks.", grounded: true, worst: result.worst };
+        }
+
+        // Abort the LLM if the client goes away (extension cancel / tab close).
+        const ac = new AbortController();
+        req.raw.on('close', () => { if (!reply.raw.writableEnded) ac.abort(); });
+
+        debug('GET /repo/explain', `${owner}/${repo}`, '·', result.worst);
+        const t0 = Date.now();
+        try {
+            const ai = await repoExplain(result, { signal: ac.signal });
+            debug(`/repo/explain ← ${Date.now() - t0}ms · grounded=${ai.grounded}`);
+            return { explanation: ai.explanation, grounded: ai.grounded, worst: result.worst };
+        } catch (e) {
+            if (ac.signal.aborted) return { aborted: true };
+            debug('/repo/explain ✕', (e as Error).message);
+            return reply.code(502).send({ error: 'AI explanation failed', detail: (e as Error).message });
+        }
     });
 
     // GET /scan?pkg=event-stream@3.3.6  →  VerdictCard + explanation

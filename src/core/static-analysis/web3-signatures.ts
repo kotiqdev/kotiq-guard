@@ -62,10 +62,12 @@ const SIGNATURES: readonly Signature[] = [
     /\b(?:curl|wget)\b[^\n;]{0,200}?\|\s*(?:sh|bash)\b/g,
   ),
   sig(
+    // Commonly benign: many legit packages use `node -e` for postinstall funding messages, so on
+    // its own it is only a soft signal (MEDIUM). Real abuse trips the CRITICAL/HIGH sigs alongside it.
     'node_dash_e',
     'crypto_theft',
     'node -e inline execution',
-    Severity.HIGH,
+    Severity.MEDIUM,
     /\bnode\s+-e\b/g,
   ),
   sig('eval_call', 'crypto_theft', 'eval() of dynamic source', Severity.HIGH, /\beval\s*\(/g),

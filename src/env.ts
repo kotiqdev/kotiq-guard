@@ -24,6 +24,9 @@ const EnvSchema = z.object({
     // User store (who is pro/blocked): 'file' (dev JSON) | 'firestore' (prod, wired at deploy).
     USERS_STORE: z.enum(['file', 'firestore']).default('file'),
     USERS_FILE: z.string().default('data/users.json'),
+    // Optional GitHub token for the repo scanner: lifts the 60/hr unauthenticated rate limit to
+    // 5000/hr and unlocks PRIVATE repos (e.g. an inert malware fixture). Read-only; never required.
+    GITHUB_TOKEN: z.string().optional(),
     PORT: z.coerce.number().default(8080),
 });
 
@@ -51,6 +54,7 @@ export interface Env {
     allowedDomains: Set<string>;
     usersStore: 'file' | 'firestore';
     usersFile: string;
+    githubToken?: string;
     port: number;
 }
 
@@ -71,5 +75,6 @@ export const env: Env = {
     allowedDomains: toLowerSet(parsed.ALLOWED_DOMAINS),
     usersStore: parsed.USERS_STORE,
     usersFile: parsed.USERS_FILE,
+    githubToken: parsed.GITHUB_TOKEN,
     port: parsed.PORT,
 };
