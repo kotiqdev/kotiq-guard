@@ -1,8 +1,8 @@
 # Deploy — on push to develop (→ dev service) or main (→ prod service).
 # Auth to GCP is KEYLESS via Workload Identity Federation (no JSON key in GitHub).
 #
-# Stays dormant until the repo variable WIF_PROVIDER is set (filled from Terraform outputs in
-# Stage 4). Until then the job is skipped, so there are no red runs before the infra exists.
+# Stays dormant until the repo variable WIF_PROVIDER is set. Until then the job is skipped, so there
+# are no red runs before the infra exists.
 #
 # Required repo Variables (Settings → Secrets and variables → Actions → Variables):
 #   WIF_PROVIDER      full provider resource, e.g. projects/123/locations/global/workloadIdentityPools/gh/providers/gh
