@@ -205,7 +205,8 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                             </div>
                         )}
                         <div style={{ marginTop: 10, color: '#8a929b', fontSize: 11 }}>
-                            Pro reads the actual script source + known CVEs — request access from the Kotiq toolbar icon.
+                            Pro runs the full cloud analysis — multi-agent Gemini + a known-CVE check. Request access from
+                            the Kotiq toolbar icon.
                         </div>
                     </div>
                 </div>
