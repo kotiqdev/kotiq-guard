@@ -235,8 +235,11 @@ function checkIdea(path: string, text: string, out: RepoSelfFinding[]): void {
 }
 
 // --- source files -------------------------------------------------------------------------------
+// Real exfil = process.env passed INTO an outbound request, e.g. axios.post(url, { ...process.env }).
+// NOT a bare { ...process.env } spread — that is the normal way to forward env to a child process
+// (spawn(node, args, { env: { ...process.env } })), which thousands of legit dev scripts do.
 const ENV_EXFIL_RE =
-    /(?:fetch|axios\s*\.\s*(?:post|get|put|patch)|\.\s*(?:post|get|put))\s*\([^)]*\.\.\.\s*process\.env|\{\s*\.\.\.\s*process\.env\s*\}/;
+    /(?:fetch|axios\s*\.\s*(?:post|get|put|patch)|\.\s*(?:post|get|put))\s*\([^)]*\.\.\.\s*process\.env/;
 
 function checkSource(path: string, text: string, out: RepoSelfFinding[]): void {
     for (const hit of scan(text)) {

@@ -88,6 +88,8 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
             'packages/x/.yarn/releases/yarn-4.9.2.cjs': 'new Function(s, body);',
             'src/api.ts': `export async function load() { const r = await fetch('https://api.example.com/v1/data'); return r.json(); }`,
             'src/template.ts': `export const compile = (src: string) => new Function('ctx', src);`,
+            // Forwarding env to a child process is normal — must NOT be flagged as exfiltration.
+            'scripts/run-node.mjs': `import { spawn } from 'node:child_process'; spawn('node', ['app.js'], { stdio: 'inherit', env: { ...process.env } });`,
         });
         const r = await selfScan(legit);
         expect(r.worst).toBe(Verdict.SAFE);
@@ -95,6 +97,7 @@ describe('selfScan — Contagious-Interview / BeaverTail lure', () => {
         expect(r.findings.some((f) => f.file.includes('.yarn'))).toBe(false); // vendored toolchain skipped
         expect(r.findings.some((f) => /outbound HTTP/i.test(f.label))).toBe(false); // fetch() is normal
         expect(r.findings.some((f) => /Function\(\) constructor/.test(f.label))).toBe(false); // templating is normal
+        expect(r.findings.some((f) => /environment variables/i.test(f.label))).toBe(false); // env→child is normal
     });
 
     it('returns SAFE with no findings for a clean repo', async () => {
