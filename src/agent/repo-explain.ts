@@ -49,11 +49,22 @@ export async function repoExplain(result: RepoResult, config?: RunnableConfig): 
     const findings = findingsBlock(result);
     const maxTries = agents.repoCritic.maxTries ?? 2;
 
+    // Bail out between LLM calls if the caller aborted (the in-call abort is handled by the model's
+    // streaming loop; this stops us starting the critic / a retry after a cancel).
+    const ensureLive = (): void => {
+        if (config?.signal?.aborted) {
+            const e = new Error('aborted');
+            e.name = 'AbortError';
+            throw e;
+        }
+    };
+
     let explanation = '';
     let grounded = false;
     let retryNote = '';
 
     for (let attempt = 1; attempt <= maxTries; attempt++) {
+        ensureLive();
         const analystPrompt = render(agents.repoAnalyst.prompt, {
             repo: result.repo,
             worst: result.worst,
@@ -66,6 +77,7 @@ export async function repoExplain(result: RepoResult, config?: RunnableConfig): 
         explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
         debug(`repoAnalyst ← done (${Date.now() - t0}ms)`);
 
+        ensureLive();
         const criticPrompt = render(agents.repoCritic.prompt, { findings, explanation });
         const cres = await makeModel(agents.repoCritic.temperature).invoke(criticPrompt, config);
         const obj = extractJson(String(cres.content));

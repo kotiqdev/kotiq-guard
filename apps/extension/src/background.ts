@@ -19,15 +19,29 @@ type Msg =
     | { type: 'repoExplain'; owner: string; repo: string };
 
 let explainAbort: AbortController | null = null;
+let explainRid: string | null = null; // id of the in-flight LLM request, for explicit server-side cancel
 
-async function callScan(pkg: string, from: string, explain: boolean, signal?: AbortSignal) {
+// One place to attach the signed-in user's token and call the backend. Returns the parsed JSON on
+// success (null otherwise) + the HTTP status, so callers can branch on 401/403.
+async function authedFetch(path: string, signal?: AbortSignal): Promise<{ ok: boolean; status: number; json: unknown | null }> {
     const session = await loadSession();
     const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
-    const url =
-        `${API_BASE}/scan?pkg=${encodeURIComponent(pkg)}` +
-        `${explain ? '' : '&explain=false'}&from=${encodeURIComponent(from)}`;
-    const res = await fetch(url, { headers, signal });
-    return { ok: res.ok, status: res.status, data: res.ok ? await res.json() : null };
+    const res = await fetch(`${API_BASE}${path}`, { headers, signal });
+    return { ok: res.ok, status: res.status, json: res.ok ? await res.json() : null };
+}
+
+async function callScan(pkg: string, from: string, explain: boolean, signal?: AbortSignal, rid?: string) {
+    const path =
+        `/scan?pkg=${encodeURIComponent(pkg)}${explain ? '' : '&explain=false'}` +
+        `&from=${encodeURIComponent(from)}${rid ? `&rid=${rid}` : ''}`;
+    const { ok, status, json } = await authedFetch(path, signal);
+    return { ok, status, data: json };
+}
+
+// Tell the server to abort the in-flight LLM request explicitly (a fetch-abort alone doesn't always
+// tear down the keep-alive socket, so the server may not notice the client went away).
+function postCancel(): void {
+    if (explainRid) void fetch(`${API_BASE}/cancel?rid=${explainRid}`, { method: 'POST' }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
@@ -52,8 +66,9 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                     break;
                 case 'explain':
                     explainAbort = new AbortController();
+                    explainRid = crypto.randomUUID();
                     try {
-                        sendResponse(await callScan(msg.pkg, msg.from ?? '', true, explainAbort.signal));
+                        sendResponse(await callScan(msg.pkg, msg.from ?? '', true, explainAbort.signal, explainRid));
                     } catch (e) {
                         sendResponse(
                             (e as Error).name === 'AbortError'
@@ -62,37 +77,38 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                         );
                     } finally {
                         explainAbort = null;
+                        explainRid = null;
                     }
                     break;
                 case 'cancel':
-                    explainAbort?.abort();
+                    postCancel(); // explicit server-side abort
+                    explainAbort?.abort(); // also drop our own pending fetch
                     sendResponse({ ok: true });
                     break;
                 case 'liteScan':
                     sendResponse({ ok: true, result: await liteScan(msg.pkg) });
                     break;
                 case 'repoScan': {
-                    // The scan runs on the BACKEND now (authoritative logic); we just relay + attach the token.
-                    const session = await loadSession();
-                    const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
-                    const url = `${API_BASE}/repo?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}`;
-                    const res = await fetch(url, { headers });
-                    sendResponse({ ok: res.ok, status: res.status, result: res.ok ? await res.json() : null });
+                    // The scan runs on the BACKEND (authoritative logic); we just relay + attach the token.
+                    const r = await authedFetch(`/repo?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}`);
+                    sendResponse({ ok: r.ok, status: r.status, result: r.json });
                     break;
                 }
                 case 'repoExplain': {
                     // Pro: AI narrative over the repo findings (analyst ⇄ critic on the backend).
                     explainAbort = new AbortController();
+                    explainRid = crypto.randomUUID();
                     try {
-                        const session = await loadSession();
-                        const headers = session ? { Authorization: `Bearer ${session.idToken}` } : undefined;
-                        const url = `${API_BASE}/repo/explain?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}`;
-                        const res = await fetch(url, { headers, signal: explainAbort.signal });
-                        sendResponse({ ok: res.ok, status: res.status, result: res.ok ? await res.json() : null });
+                        const r = await authedFetch(
+                            `/repo/explain?owner=${encodeURIComponent(msg.owner)}&repo=${encodeURIComponent(msg.repo)}&rid=${explainRid}`,
+                            explainAbort.signal,
+                        );
+                        sendResponse({ ok: r.ok, status: r.status, result: r.json });
                     } catch (e) {
                         sendResponse((e as Error).name === 'AbortError' ? { aborted: true } : { ok: false, error: (e as Error).message });
                     } finally {
                         explainAbort = null;
+                        explainRid = null;
                     }
                     break;
                 }

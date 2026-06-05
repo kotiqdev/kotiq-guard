@@ -3,32 +3,9 @@ import { useEffect, useState } from 'react';
 import { REQUIRE_AUTH } from '../config';
 import type { LiteResult } from '../lite/engine';
 import { loadSession, SESSION_KEY, type Session } from '../session';
-
-const COLORS: Record<string, string> = {
-    SAFE: '#1a7f37',
-    SUSPICIOUS: '#bf8700',
-    MALICIOUS: '#cf222e',
-    NEEDS_REVIEW: '#6e7781',
-};
-
-// Matrix-style "Explain with AI" button: dark grey, glowing green text; brighter on hover, flashes on click.
-const BTN_CSS = `
-.kotiq-explain {
-  width: 100%; padding: 8px 14px; border: 1px solid #00ff41; border-radius: 6px;
-  background: #2a2a2a; color: #00ff41;
-  font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .3px;
-  text-shadow: 0 0 6px rgba(0,255,65,.45); cursor: pointer;
-  transition: background .15s, box-shadow .15s, text-shadow .15s, color .15s, transform .05s;
-}
-.kotiq-explain:hover {
-  background: #333; border-color: #5bff86; color: #5bff86;
-  text-shadow: 0 0 10px rgba(0,255,65,.9); box-shadow: 0 0 12px rgba(0,255,65,.35);
-}
-.kotiq-explain:active { transform: scale(.98); background: #00ff41; color: #08240f; text-shadow: none; }
-.kotiq-explain:disabled { cursor: default; opacity: .6; box-shadow: none; text-shadow: none; }
-.kotiq-explain.loading { border-color: #ff5f56; color: #ff7b73; text-shadow: 0 0 6px rgba(255,95,86,.5); }
-.kotiq-explain.loading:hover { background: #3a2a2a; box-shadow: 0 0 12px rgba(255,95,86,.4); }
-`;
+import { AiBlock } from '../ui/AiBlock';
+import { SignInBadge } from '../ui/SignInBadge';
+import { badgePill, badgeShell, dropdownPanel, panel, sectionLabel, VERDICT_COLOR } from '../ui/theme';
 
 type ScanResult = {
     verdict: string;
@@ -63,48 +40,6 @@ function packageSpecFromPage(): string | null {
 // Reply shape from the background worker for scan/explain.
 type ScanReply = { ok?: boolean; status?: number; data?: ScanResult | null; aborted?: boolean; error?: string };
 
-// Shown when auth is required but the user isn't signed in. Clicking starts Google sign-in via the
-// background worker. We never call the scan cloud here — only auth.
-function SignInBadge({ onSignIn, busy, error }: { onSignIn: () => void; busy: boolean; error: string | null }) {
-    return (
-        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
-            <div
-                onClick={busy ? undefined : onSignIn}
-                title="Sign in with Google to scan this package"
-                style={{
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    color: '#fff',
-                    fontWeight: 600,
-                    background: '#6e7781',
-                    boxShadow: '0 2px 8px rgba(0,0,0,.2)',
-                    cursor: busy ? 'default' : 'pointer',
-                    opacity: busy ? 0.7 : 1,
-                }}
-            >
-                🔒 Kotiq · {busy ? 'Signing in…' : 'Sign in to scan'}
-            </div>
-            {error && (
-                <div
-                    style={{
-                        marginTop: 6,
-                        width: 280,
-                        background: '#fff',
-                        color: '#cf222e',
-                        border: '1px solid #d0d7de',
-                        borderRadius: 8,
-                        boxShadow: '0 4px 16px rgba(0,0,0,.18)',
-                        padding: '8px 10px',
-                        lineHeight: 1.4,
-                    }}
-                >
-                    {error}
-                </div>
-            )}
-        </div>
-    );
-}
-
 // Shown for a valid Google user who isn't allow-listed (Pro). Runs the LIGHT engine in the browser
 // (install-hook commands from the registry + signatures). Deterministic only — AI is a Pro feature.
 function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | null }) {
@@ -118,15 +53,12 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
             .catch(() => setResult(null));
     }, [pkg]);
 
-    const color = (result && COLORS[result.verdict]) || '#9aa0a6';
+    const color = (result && VERDICT_COLOR[result.verdict]) || '#9aa0a6';
     const version = pageVersion ?? result?.version ?? null;
 
     return (
-        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
-            <div
-                onClick={() => setOpen((o) => !o)}
-                style={{ padding: '8px 12px', borderRadius: 8, color: '#fff', fontWeight: 600, background: color, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}
-            >
+        <div style={badgeShell}>
+            <div onClick={() => setOpen((o) => !o)} style={badgePill(color)}>
                 🐱 Kotiq: {result?.verdict ?? '…'}
                 {version && <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>· {version}</span>}
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, background: 'rgba(255,255,255,.25)', borderRadius: 999, padding: '1px 6px' }}>
@@ -134,9 +66,9 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                 </span>
             </div>
             {open && result && (
-                <div style={{ marginTop: 6, width: 320, background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)', overflow: 'hidden' }}>
-                    <div style={{ padding: '10px 12px', borderBottom: '1px solid #eaeef2', color: '#57606a' }}>
-                        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 4 }}>What Kotiq checked</div>
+                <div style={{ ...dropdownPanel, width: 320, overflow: 'hidden' }}>
+                    <div style={{ ...panel, color: '#57606a' }}>
+                        <div style={sectionLabel}>What Kotiq checked</div>
                         {result.note}
                     </div>
                     <div style={{ padding: '10px 12px', color: '#8a929b', fontSize: 11 }}>
@@ -224,14 +156,22 @@ export function Badge() {
 
     if (!pkg) return null;
     if (REQUIRE_AUTH && session === null) {
-        return <SignInBadge onSignIn={doSignIn} busy={authBusy} error={authError} />;
+        return (
+            <SignInBadge
+                onSignIn={doSignIn}
+                busy={authBusy}
+                error={authError}
+                label="Sign in to scan"
+                title="Sign in with Google to scan this package"
+            />
+        );
     }
     if (lite) return <LiteBadge pkg={pkg} pageVersion={pageVersion} />;
     if (!data) return null;
 
     // Badge reflects the effective verdict (security can escalate it once we've run the agents).
     const shown = full?.effective_verdict ?? data.verdict;
-    const color = COLORS[shown] ?? '#6e7781';
+    const color = VERDICT_COLOR[shown] ?? '#6e7781';
 
     const version = pageVersion ?? data.scanned_version ?? null;
     const isFallback = !pageVersion && !!data.scanned_version;
@@ -258,24 +198,9 @@ export function Badge() {
         setLoading(false);
     }
 
-    const panel = { padding: '10px 12px', borderBottom: '1px solid #eaeef2' } as const;
-
     return (
-        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' }}>
-            <style>{BTN_CSS}</style>
-            <div
-                onClick={() => setOpen((o) => !o)}
-                title={data.summary}
-                style={{
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    color: '#fff',
-                    fontWeight: 600,
-                    background: color,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(0,0,0,.2)',
-                }}
-            >
+        <div style={badgeShell}>
+            <div onClick={() => setOpen((o) => !o)} title={data.summary} style={badgePill(color)}>
                 🐱 Kotiq: {shown}
                 {version && (
                     <span style={{ marginLeft: 6, fontWeight: 400, opacity: isFallback ? 0.55 : 0.85 }}>
@@ -316,31 +241,22 @@ export function Badge() {
             )}
 
             {open && (
-                <div
-                    style={{
-                        marginTop: 6,
-                        width: 340,
-                        background: '#fff',
-                        color: '#24292f',
-                        border: '1px solid #d0d7de',
-                        borderRadius: 8,
-                        boxShadow: '0 4px 16px rgba(0,0,0,.18)',
-                        overflow: 'hidden',
-                    }}
-                >
+                <div style={{ ...dropdownPanel, width: 340, overflow: 'hidden' }}>
+                    {/* AI explanation — at the TOP, matching the repo badge */}
+                    <div style={panel}>
+                        <AiBlock
+                            busy={loading}
+                            text={full?.explanation}
+                            agentsLabel="security ⇄ critic"
+                            disclaimer="AI summary — double-check critical installs."
+                            onExplain={explain}
+                            onCancel={cancel}
+                        />
+                    </div>
+
                     {/* What Kotiq checked (from the instant deterministic scan) */}
                     <div style={{ ...panel, color: '#57606a' }}>
-                        <div
-                            style={{
-                                fontSize: 11,
-                                textTransform: 'uppercase',
-                                letterSpacing: '.4px',
-                                color: '#8a929b',
-                                marginBottom: 4,
-                            }}
-                        >
-                            What Kotiq checked
-                        </div>
+                        <div style={sectionLabel}>What Kotiq checked</div>
                         {hookNames.length ? (
                             <>
                                 <b>Install hooks:</b> {hookNames.join(', ')}
@@ -357,32 +273,11 @@ export function Badge() {
 
                     {/* Security agent escalation (after Explain) */}
                     {sec?.level && sec.level !== 'ok' && (
-                        <div style={{ ...panel, color: COLORS.SUSPICIOUS, fontWeight: 600 }}>
+                        <div style={{ ...panel, color: VERDICT_COLOR.SUSPICIOUS, fontWeight: 600 }}>
                             ⚠ Security review: {sec.level.toUpperCase()}
                             <div style={{ fontWeight: 400, fontSize: 12, marginTop: 2 }}>{sec.note}</div>
                         </div>
                     )}
-
-                    {/* AI explanation */}
-                    <div style={{ padding: '10px 12px' }}>
-                        <button
-                            type="button"
-                            className={`kotiq-explain${loading ? ' loading' : ''}`}
-                            onClick={loading ? cancel : explain}
-                        >
-                            {loading ? '✕ Cancel — Thinking…' : full ? '🤖 Re-explain with AI' : '🤖 Explain with AI'}
-                        </button>
-                        {full?.explanation && (
-                            <>
-                                <div style={{ marginTop: 10, color: '#57606a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                                    {full.explanation}
-                                </div>
-                                <div style={{ marginTop: 8, color: '#8a929b', fontSize: 11, fontStyle: 'italic' }}>
-                                    AI summary — double-check critical installs.
-                                </div>
-                            </>
-                        )}
-                    </div>
                 </div>
             )}
         </div>
