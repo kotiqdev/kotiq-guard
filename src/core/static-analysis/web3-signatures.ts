@@ -62,13 +62,25 @@ const SIGNATURES: readonly Signature[] = [
     /\b(?:curl|wget)\b[^\n;]{0,200}?\|\s*(?:sh|bash)\b/g,
   ),
   sig(
-    // Commonly benign: many legit packages use `node -e` for postinstall funding messages, so on
-    // its own it is only a soft signal (MEDIUM). Real abuse trips the CRITICAL/HIGH sigs alongside it.
+    // Commonly benign: many legit popular packages (msw, core-js, nx) use `node -e` for postinstall
+    // funding/setup messages, so on its own it is only a soft signal (LOW) — not enough to make a
+    // package SUSPICIOUS. Real abuse trips the CRITICAL/HIGH sigs (eval/fetch+exec/curl|sh) alongside it.
     'node_dash_e',
     'crypto_theft',
     'node -e inline execution',
-    Severity.MEDIUM,
+    Severity.LOW,
     /\bnode\s+-e\b/g,
+  ),
+  sig(
+    // Executing a shell command taken from an environment variable — `exec(process.env.X)` — is
+    // almost always malicious (attacker-controlled command on install). Scoped to the FIRST argument
+    // of exec/execSync (the command) so legit env FORWARDING — `exec(cmd, { env: {...process.env} })`,
+    // where process.env sits in the options object after a comma — does NOT match.
+    'env_command_exec',
+    'crypto_theft',
+    'runs a shell command from an environment variable',
+    Severity.HIGH,
+    /\b(?:exec|execSync)\s*\(\s*[^,)]*process\.env/g,
   ),
   sig('eval_call', 'crypto_theft', 'eval() of dynamic source', Severity.HIGH, /\beval\s*\(/g),
   sig(

@@ -57,12 +57,19 @@ export function analyzeManifest(manifest: PackageManifest | Record<string, unkno
     const cmdHits = scan(command ?? '');
     let baseSeverity: Severity = hookName === 'prepare' ? Severity.INFO : Severity.LOW;
     for (const hit of cmdHits) baseSeverity = maxSeverity(baseSeverity, hit.severity);
+    // Strong wording only when a genuinely high-risk pattern fired; a soft signal (e.g. a benign
+    // `node -e` funding message used by many popular packages) gets measured language, not an alarm.
+    const highRisk = cmdHits.some((h) => SEVERITY_ORDER.indexOf(h.severity) >= SEVERITY_ORDER.indexOf(Severity.HIGH));
 
     let explanation: string;
-    if (cmdHits.length > 0) {
+    if (cmdHits.length > 0 && highRisk) {
       explanation =
-        `npm runs \`${command}\` on install (${hookName}) and it matches a known malicious ` +
-        'pattern — Contagious-Interview / Lazarus malware hides payloads in install hooks.';
+        `npm runs \`${command}\` on install (${hookName}) and it matches a high-risk pattern ` +
+        'commonly abused by supply-chain malware in install hooks — treat as dangerous.';
+    } else if (cmdHits.length > 0) {
+      explanation =
+        `npm runs \`${command}\` on install (${hookName}). It uses an inline/dynamic command — a ` +
+        'soft signal, but no high-risk pattern was detected; worth a glance.';
     } else if (hookName === 'prepare') {
       explanation =
         'Declares a `prepare` script. Note: `prepare` does NOT run when this package is installed ' +

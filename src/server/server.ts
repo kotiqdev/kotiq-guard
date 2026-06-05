@@ -146,7 +146,11 @@ async function start(): Promise<void> {
         if (!owner || !repo) return reply.code(400).send({ error: 'owner and repo are required' });
         debug('GET /repo', `${owner}/${repo}`);
         const result = await repoScan(owner, repo);
-        debug('/repo ←', `${owner}/${repo}`, result.worst, `· ${result.withHooks} hook deps`);
+        debug(
+            '/repo ←',
+            `${owner}/${repo}`,
+            result.found ? `${result.worst} · ${result.withHooks} hook deps` : `skipped · ${result.error ?? 'not a Node project'}`,
+        );
         return result;
     });
 

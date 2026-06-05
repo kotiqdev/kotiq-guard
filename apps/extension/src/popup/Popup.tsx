@@ -20,6 +20,7 @@ const C = {
 
 export function Popup() {
     const [view, setView] = useState<View>({ kind: 'loading' });
+    const [about, setAbout] = useState(false);
 
     // On open: restore a cached session, then resolve the tier from the backend.
     useEffect(() => {
@@ -78,7 +79,35 @@ export function Popup() {
                 </span>
             </div>
             <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
-            <div style={S.footer}>Beta — early build. Know before you install.</div>
+            {about && <About />}
+            <div style={S.footer}>
+                <span>Beta — early build. Know before you install.</span>
+                <button style={S.aboutToggle} onClick={() => setAbout((a) => !a)}>
+                    About {about ? '▴' : '▾'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function About() {
+    return (
+        <div style={S.about}>
+            <p style={{ margin: '0 0 8px' }}>
+                <strong style={{ color: C.fg }}>Kotiq Guard</strong> tells you whether a GitHub repo or npm
+                package is safe to <em>open</em> or <em>install</em> — before you run it.
+            </p>
+            <p style={{ margin: '0 0 8px' }}>
+                It inspects the project <strong>passively</strong> — its scripts, editor tasks, source and
+                dependencies — and never executes any code. Pro adds AI analysis of the code that actually
+                runs on install or open.
+            </p>
+            <p style={{ margin: 0, color: C.dim }}>
+                Beta — early build, results may be imperfect. Feedback:{' '}
+                <a href="https://kotiq.dev" target="_blank" rel="noreferrer" style={{ color: C.grey }}>
+                    kotiq.dev
+                </a>
+            </p>
         </div>
     );
 }
@@ -180,7 +209,33 @@ const S: Record<string, CSSProperties> = {
     },
     header: { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: `1px solid ${C.border}` },
     body: { padding: 16, minHeight: 96 },
-    footer: { padding: '8px 14px', borderTop: `1px solid ${C.border}`, color: C.dim, fontSize: 11 },
+    footer: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '8px 14px',
+        borderTop: `1px solid ${C.border}`,
+        color: C.dim,
+        fontSize: 11,
+    },
+    aboutToggle: {
+        background: 'none',
+        border: 'none',
+        color: C.grey,
+        cursor: 'pointer',
+        fontSize: 11,
+        fontWeight: 600,
+        padding: 0,
+        flexShrink: 0,
+    },
+    about: {
+        padding: '12px 14px',
+        borderTop: `1px solid ${C.border}`,
+        color: C.fg,
+        fontSize: 12,
+        lineHeight: 1.45,
+    },
     row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     primary: {
         width: '100%',
