@@ -43,6 +43,7 @@ export function RepoBadge() {
     const [session, setSession] = useState<Session | null | undefined>(undefined);
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
+    const [scanning, setScanning] = useState(false);
     const [open, setOpen] = useState(false);
     const [ai, setAi] = useState<{ loading: boolean; text?: string; error?: string; pro?: boolean } | null>(null);
 
@@ -53,13 +54,15 @@ export function RepoBadge() {
     useEffect(() => {
         if (!target || session === undefined) return;
         if (REQUIRE_AUTH && !session) return; // need sign-in first
+        setScanning(true);
         void chrome.runtime
             .sendMessage({ type: 'repoScan', owner: target.owner, repo: target.repo })
             .then((r: { status?: number; result?: RepoResult }) => {
                 if (r?.status === 401) return setSession(null);
                 setResult(r?.result ?? null);
             })
-            .catch(() => setResult(null));
+            .catch(() => setResult(null))
+            .finally(() => setScanning(false));
     }, [target, session]);
 
     async function doSignIn() {
@@ -101,6 +104,18 @@ export function RepoBadge() {
                     style={{ ...pill('#6e7781', authBusy ? 'default' : 'pointer'), opacity: authBusy ? 0.7 : 1 }}
                 >
                     🔒 Kotiq · {authBusy ? 'Signing in…' : 'Sign in to scan deps'}
+                </div>
+            </div>
+        );
+    }
+
+    // Signed-in users see Kotiq working while GitHub is being analyzed (it can take a few seconds).
+    if (scanning && !result) {
+        return (
+            <div style={shell}>
+                <style>{'@keyframes kotiqPulse{0%,100%{opacity:.5}50%{opacity:1}}'}</style>
+                <div style={{ ...pill('#6e7781', 'default'), animation: 'kotiqPulse 1.2s ease-in-out infinite' }}>
+                    🐱 Kotiq · scanning repo…
                 </div>
             </div>
         );
