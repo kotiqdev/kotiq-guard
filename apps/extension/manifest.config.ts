@@ -11,7 +11,8 @@ export default defineManifest({
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxFFxIl8kYCu1XQ1Kb+TujSzUCyUBYGMr2J8k6ZATsnKS4eE3Cp/io2/F+S44q/lOr/PVZ+PBerdhWhn3t8fzwjmShbqpL2fh9v9Q/DnrFdxTmvr3XNjfUxWlcPbHeV7zGfGr8PE9qRiCo+A/zwjHa6T5bJAyes0p5dcg0kVVJZvthpQHOS2u+pZqb1tjliL0bLDPS6xg6zZ+Qjls6vFNiI5FWRPNV225qKjsbMvSJ4RTzTutVwzT4g6546JUJaUvxdoRH5WekRh7to9JoIPXnvyLlootPqlgxvvzlfEm8mS4AXma9dDRNA0K0J9SPPyHCBzMdoODWR/nUyehbpmGQQIDAQAB',
     // identity → Google sign-in (launchWebAuthFlow); storage → cache the session token.
     permissions: ['identity', 'storage'],
-    host_permissions: ['http://localhost:8080/*'],
+    // localhost → Pro backend · registry → Lite reads install-hook commands on-device.
+    host_permissions: ['http://localhost:8080/*', 'https://registry.npmjs.org/*'],
     // Privileged context that runs the sign-in flow on behalf of the content script.
     background: {
         service_worker: 'src/background.ts',
