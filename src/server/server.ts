@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
@@ -10,6 +12,29 @@ import { getPlan, recordSeen } from '../users';
 import { env } from '../env';
 import { debug } from '../logger';
 
+// Abort an in-flight request's work (LLM agents) when the client goes away — extension Cancel, tab
+// close, navigation. For an already-consumed GET, Node fires `aborted`/response `close`, NOT request
+// `close`, so we listen on all three. Returns the AbortController to thread into the agent calls.
+function abortWhenClientGone(rawReq: IncomingMessage, rawRes: ServerResponse, label: string): AbortController {
+    const ac = new AbortController();
+    const onGone = (src: string) => (): void => {
+        if (!rawRes.writableEnded && !ac.signal.aborted) {
+            ac.abort();
+            debug(`${label} ✕ client gone (${src}) — aborting agents`);
+        }
+    };
+    rawReq.on('close', onGone('req.close'));
+    rawReq.on('aborted', onGone('req.aborted'));
+    rawRes.on('close', onGone('res.close'));
+    rawReq.socket?.on('close', onGone('socket.close')); // lowest-level, most reliable signal
+    return ac;
+}
+
+// In-flight LLM requests by client-supplied id, so the client can cancel EXPLICITLY (POST /cancel).
+// Browsers don't reliably tear down a keep-alive socket on fetch-abort, so socket-close detection
+// alone misses extension cancels — the explicit signal is the reliable path.
+const activeRequests = new Map<string, AbortController>();
+
 async function start(): Promise<void> {
     const app = Fastify({ logger: false });
 
@@ -18,7 +43,7 @@ async function start(): Promise<void> {
     // (OPTIONS) first — we must answer it with 204 + these headers, or the real request is blocked.
     app.addHook('onRequest', async (req, reply) => {
         reply.header('Access-Control-Allow-Origin', '*');
-        reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         reply.header('Access-Control-Max-Age', '86400');
         if (req.method === 'OPTIONS') return reply.code(204).send(); // answer the preflight
@@ -35,7 +60,8 @@ async function start(): Promise<void> {
                 req.method === 'OPTIONS' ||
                 req.url === '/health' ||
                 req.url.startsWith('/me') ||
-                req.url.startsWith('/repo')
+                req.url.startsWith('/repo') ||
+                req.url.startsWith('/cancel') // only aborts an in-flight request by its random id
             )
                 return;
             const header = req.headers.authorization ?? '';
@@ -69,6 +95,16 @@ async function start(): Promise<void> {
     await app.register(swaggerUi, { routePrefix: '/docs' });
 
     app.get('/health', async () => ({ ok: true }));
+
+    // POST /cancel?rid=<id> → abort an in-flight LLM request the client started (explicit cancel).
+    app.post<{ Querystring: { rid?: string } }>('/cancel', async (req) => {
+        const ac = req.query.rid ? activeRequests.get(req.query.rid) : undefined;
+        if (ac) {
+            ac.abort();
+            debug('/cancel → aborted', req.query.rid);
+        }
+        return { ok: true, cancelled: !!ac };
+    });
 
     // Who am I + which tier. The extension calls this after sign-in to choose Pro vs Lite UI.
     //   allow-listed verified Google user → "pro" · any other verified Google user → "lite".
@@ -113,9 +149,9 @@ async function start(): Promise<void> {
         return result;
     });
 
-    // GET /repo/explain?owner=&repo= → Pro: an AI narrative (analyst ⇄ critic) over the repo findings.
-    app.get<{ Querystring: { owner?: string; repo?: string } }>('/repo/explain', async (req, reply) => {
-        const { owner, repo } = req.query;
+    // GET /repo/explain?owner=&repo=&rid= → Pro: an AI narrative (analyst ⇄ critic) over the findings.
+    app.get<{ Querystring: { owner?: string; repo?: string; rid?: string } }>('/repo/explain', async (req, reply) => {
+        const { owner, repo, rid } = req.query;
         if (!owner || !repo) return reply.code(400).send({ error: 'owner and repo are required' });
 
         // Pro gate: the AI layer is a paid feature. (Local dev with auth off → allowed.)
@@ -132,21 +168,23 @@ async function start(): Promise<void> {
             }
         }
 
-        const result = await repoScan(owner, repo);
-        if (!result.found) return reply.code(404).send({ error: result.error ?? 'not a Node repo' });
-
-        const hasRisk = (result.self?.findings.length ?? 0) > 0 || result.flagged.length > 0;
-        if (!hasRisk) {
-            return { explanation: "Kotiq found no risky behaviour in this repository's own files or its dependencies' install hooks.", grounded: true, worst: result.worst };
-        }
-
-        // Abort the LLM if the client goes away (extension cancel / tab close).
-        const ac = new AbortController();
-        req.raw.on('close', () => { if (!reply.raw.writableEnded) ac.abort(); });
-
-        debug('GET /repo/explain', `${owner}/${repo}`, '·', result.worst);
+        // Register for explicit cancel (POST /cancel?rid) BEFORE the multi-second repo re-scan, so
+        // Cancel works the whole time the spinner shows; a cancel during the scan makes repoExplain
+        // bail before any LLM call.
+        const ac = abortWhenClientGone(req.raw, reply.raw, `/repo/explain ${owner}/${repo}`);
+        if (rid) activeRequests.set(rid, ac);
         const t0 = Date.now();
         try {
+            const result = await repoScan(owner, repo);
+            if (!result.found) return reply.code(404).send({ error: result.error ?? 'not a Node repo' });
+
+            const hasRisk = (result.self?.findings.length ?? 0) > 0 || result.flagged.length > 0;
+            if (!hasRisk) {
+                return { explanation: "Kotiq found no risky behaviour in this repository's own files or its dependencies' install hooks.", grounded: true, worst: result.worst };
+            }
+            if (ac.signal.aborted) return { aborted: true };
+
+            debug('GET /repo/explain', `${owner}/${repo}`, '·', result.worst);
             const ai = await repoExplain(result, { signal: ac.signal });
             debug(`/repo/explain ← ${Date.now() - t0}ms · grounded=${ai.grounded}`);
             return { explanation: ai.explanation, grounded: ai.grounded, worst: result.worst };
@@ -154,11 +192,13 @@ async function start(): Promise<void> {
             if (ac.signal.aborted) return { aborted: true };
             debug('/repo/explain ✕', (e as Error).message);
             return reply.code(502).send({ error: 'AI explanation failed', detail: (e as Error).message });
+        } finally {
+            if (rid) activeRequests.delete(rid);
         }
     });
 
     // GET /scan?pkg=event-stream@3.3.6  →  VerdictCard + explanation
-    app.get<{ Querystring: { pkg: string; from?: string; explain?: string } }>(
+    app.get<{ Querystring: { pkg: string; from?: string; explain?: string; rid?: string } }>(
         '/scan',
         {
             schema: {
@@ -170,6 +210,7 @@ async function start(): Promise<void> {
                         pkg: { type: 'string', description: 'npm package, e.g. "event-stream@3.3.6"' },
                         from: { type: 'string', description: 'page URL the scan was triggered from (for logs)' },
                         explain: { type: 'string', description: 'set to "false" to skip the LLM explanation (instant verdict)' },
+                        rid: { type: 'string', description: 'client request id, for explicit cancel via POST /cancel' },
                     },
                 },
             },
@@ -179,14 +220,10 @@ async function start(): Promise<void> {
             const withExplanation = req.query.explain !== 'false';
             debug('GET /scan', pkg, withExplanation ? '' : '(fast, no LLM)', req.query.from ? `from ${req.query.from}` : '');
 
-            // If the client goes away (extension cancel), abort the graph → aborts the in-flight LLM call.
-            const ac = new AbortController();
-            req.raw.on('close', () => {
-                if (!reply.raw.writableEnded) {
-                    ac.abort();
-                    debug('/scan ✕ client disconnected — aborting agents ·', pkg);
-                }
-            });
+            // Abort on explicit client cancel (POST /cancel?rid) or if the client goes away.
+            const rid = req.query.rid;
+            const ac = abortWhenClientGone(req.raw, reply.raw, `/scan ${pkg}`);
+            if (rid) activeRequests.set(rid, ac);
 
             const t0 = Date.now();
             try {
@@ -210,6 +247,8 @@ async function start(): Promise<void> {
                     return { aborted: true };
                 }
                 throw e;
+            } finally {
+                if (rid) activeRequests.delete(rid);
             }
         },
     );
