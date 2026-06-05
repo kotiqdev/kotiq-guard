@@ -66,3 +66,39 @@ agents:
       {{securityLine}}
 
       Write 3-4 short, transparent sentences: name which install hooks exist (if any), state clearly whether Kotiq could read their script source or not, what the check concluded, and what the developer should do. Do NOT lower the verdict. No markdown.
+
+  repoAnalyst:
+    purpose: Pro repo-scan narrator. Explains, in plain language, what a repository does to the user — grounded strictly in the deterministic self-scan findings.
+    next: repoCritic
+    temperature: 0
+    prompt: |
+      You are a security analyst helping a developer decide whether a GitHub repository is safe. A passive scan already read the repo's OWN files (it executed nothing) and produced the findings below. Each finding is a fact.
+
+      Repository: {{repo}}
+      Overall verdict: {{worst}}
+
+      Findings (severity · file · what was detected):
+      {{findings}}
+
+      Write 4-6 short, plain sentences for the developer:
+      - what this repository does when you OPEN it in an editor and/or run `npm install` (only behaviours present in the findings);
+      - what the attacker is trying to achieve (e.g. steal credentials/wallets, run remote code);
+      - the concrete action to take.
+      If any finding shows code auto-runs on folder-open or install, state plainly that the developer must NOT clone, open, or install it — inspect only in a sandbox.
+      Ground EVERY claim in the findings above. Do not invent files, hosts, scripts, or behaviours that are not listed. No markdown.{{retryNote}}
+
+  repoCritic:
+    purpose: Checks the repo explanation is grounded only in the findings (no invented files/hosts/behaviour). On fail, sends it back to repoAnalyst.
+    next: repoAnalyst on fail, end on pass
+    maxTries: 2
+    temperature: 0
+    prompt: |
+      You verify a security explanation of a repository. Your ONLY job: check the explanation states ONLY behaviours that appear in the findings below — it must not invent files, hosts, scripts, paths, or capabilities that are not present, and must not contradict them.
+
+      Findings:
+      {{findings}}
+
+      Explanation to check:
+      {{explanation}}
+
+      Flag (ok:false) ONLY if the explanation references something not present in the findings or contradicts them. General security advice (use a sandbox, do not install) is allowed. Respond with ONLY this JSON: {"ok":true|false,"issue":"<short, empty if ok>"}

@@ -44,6 +44,7 @@ export function RepoBadge() {
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
     const [open, setOpen] = useState(false);
+    const [ai, setAi] = useState<{ loading: boolean; text?: string; error?: string; pro?: boolean } | null>(null);
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -68,6 +69,24 @@ export function RepoBadge() {
             if (resp.ok && resp.session) setSession(resp.session);
         } finally {
             setAuthBusy(false);
+        }
+    }
+
+    async function runExplain() {
+        if (!target) return;
+        setAi({ loading: true });
+        try {
+            const r = (await chrome.runtime.sendMessage({ type: 'repoExplain', owner: target.owner, repo: target.repo })) as {
+                ok?: boolean;
+                status?: number;
+                result?: { explanation?: string };
+                error?: string;
+            };
+            if (r?.status === 403) return setAi({ loading: false, pro: true });
+            if (r?.ok && r.result?.explanation) return setAi({ loading: false, text: r.result.explanation });
+            setAi({ loading: false, error: r?.error ?? 'AI explanation unavailable — is the model running?' });
+        } catch (e) {
+            setAi({ loading: false, error: (e as Error).message });
         }
     }
 
@@ -106,6 +125,34 @@ export function RepoBadge() {
 
             {open && (
                 <div style={{ marginTop: 6, width: 360, maxHeight: '70vh', overflowY: 'auto', background: '#fff', color: '#24292f', border: '1px solid #d0d7de', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)' }}>
+                    {result.worst !== 'SAFE' && (
+                        <div style={panel}>
+                            {!ai && (
+                                <button
+                                    onClick={runExplain}
+                                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #d0d7de', borderRadius: 8, background: '#f6f8fa', color: '#24292f', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                                >
+                                    ✨ Explain with AI
+                                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.4px', color: '#fff', background: '#1a7f37', borderRadius: 999, padding: '1px 6px' }}>PRO</span>
+                                </button>
+                            )}
+                            {ai?.loading && <div style={{ fontSize: 12, color: '#57606a' }}>Analyzing with Kotiq's agents (analyst ⇄ critic)…</div>}
+                            {ai?.text && (
+                                <>
+                                    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 6 }}>✨ AI analysis</div>
+                                    <div style={{ fontSize: 12.5, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{ai.text}</div>
+                                    <div style={{ fontSize: 10.5, color: '#8a929b', marginTop: 6 }}>AI summary, grounded in the findings below — double-check critical actions.</div>
+                                </>
+                            )}
+                            {ai?.pro && (
+                                <div style={{ fontSize: 12, color: '#57606a' }}>
+                                    AI analysis is a Pro feature.{' '}
+                                    <a href="https://kotiq.dev" target="_blank" rel="noreferrer" style={{ color: '#0969da' }}>Request Pro access</a>.
+                                </div>
+                            )}
+                            {ai?.error && <div style={{ fontSize: 12, color: '#bc4c00' }}>{ai.error}</div>}
+                        </div>
+                    )}
                     {what.length > 0 && (
                         <div style={{ ...panel, background: '#fff8f8' }}>
                             <div style={{ color: COLORS.MALICIOUS, fontWeight: 700, marginBottom: 6 }}>⚠ What this repo does</div>
