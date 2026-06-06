@@ -4,12 +4,16 @@
 import { isAllowed, type VerifiedIdentity } from '../auth/access';
 import { env } from '../env';
 import { FileStore } from './file-store';
+import { FirestoreStore } from './firestore-store';
 import type { Plan, User, UserStore } from './types';
 
 export type { Plan, User } from './types';
 
 function makeStore(): UserStore {
-    // if (env.usersStore === 'firestore') return new FirestoreStore(env.gcpProject); // TODO @deploy
+    // Cloud (deployed) → Firestore; local dev → JSON file. Each env's project has its own Firestore.
+    if (env.usersStore === 'firestore') {
+        return new FirestoreStore({ projectId: env.vertexProject, collection: env.usersCollection });
+    }
     return new FileStore(env.usersFile);
 }
 export const store = makeStore();

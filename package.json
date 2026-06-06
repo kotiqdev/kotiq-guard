@@ -21,6 +21,7 @@
   "dependencies": {
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
+    "@google-cloud/firestore": "^8.6.0",
     "@google/genai": "^1.0.0",
     "@langchain/core": "^1.1.48",
     "@langchain/google-genai": "^2.1.31",
