@@ -1,18 +1,7 @@
-# Deploy — on push to develop (→ dev service) or main (→ prod service).
-# Auth to GCP is KEYLESS via Workload Identity Federation (no JSON key in GitHub).
-#
-# Stays dormant until the repo variable WIF_PROVIDER is set. Until then the job is skipped, so there
-# are no red runs before the infra exists.
-#
-# Required repo Variables (Settings → Secrets and variables → Actions → Variables):
-#   WIF_PROVIDER      full provider resource, e.g. projects/123/locations/global/workloadIdentityPools/gh/providers/gh
-#   DEPLOYER_SA       deployer service-account email
-#   RUNTIME_SA        Cloud Run runtime service-account email (only roles/aiplatform.user)
-#   GCP_PROJECT_ID    project id
-#   AR_REPO           Artifact Registry repo name (e.g. "containers")
-#   OAUTH_CLIENT_ID   Google OAuth client id (becomes the token `aud`)
-#   ALLOWED_EMAILS    comma-separated allow-list
-#   ALLOWED_DOMAINS   comma-separated verified Workspace domains
+# Deploy — the pushed branch selects the GitHub Environment (develop → dev, main → prod).
+# Auth is keyless via OIDC (Workload Identity Federation); no stored keys.
+# Dormant until the environment's WIF_PROVIDER variable is set (job skipped otherwise).
+# Configure each environment's Variables/Secrets under Settings → Environments.
 name: Deploy
 
 on:
@@ -25,24 +14,16 @@ permissions:
 
 env:
   REGION: europe-west1
+  SERVICE: kotiq-guard
 
 jobs:
   deploy:
-    # Dormant until WIF is configured.
+    # Branch selects the environment; each carries its own config.
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
     if: ${{ vars.WIF_PROVIDER != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      # Branch → environment: main is prod, anything else (develop) is dev.
-      - name: Resolve environment
-        id: env
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "service=kotiq-guard" >> "$GITHUB_OUTPUT"
-          else
-            echo "service=kotiq-guard-dev" >> "$GITHUB_OUTPUT"
-          fi
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -64,15 +45,15 @@ jobs:
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - name: Deploy to Cloud Run
-        # ^##^ custom delimiter so commas inside ALLOWED_EMAILS/DOMAINS don't split the var list.
+        # ^##^ custom delimiter so commas inside list vars don't split the env-var list.
         run: |
-          gcloud run deploy ${{ steps.env.outputs.service }} \
+          gcloud run deploy ${{ env.SERVICE }} \
             --image "$IMAGE" \
             --region ${{ env.REGION }} \
             --service-account ${{ vars.RUNTIME_SA }} \
             --allow-unauthenticated \
             --max-instances 2 \
-            --set-env-vars "^##^LLM_PROVIDER=vertex##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ vars.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ vars.ALLOWED_DOMAINS }}"
+            --set-env-vars "^##^LLM_PROVIDER=vertex##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ vars.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ vars.ALLOWED_DOMAINS }}##USERS_STORE=${{ vars.USERS_STORE }}##LANGSMITH_TRACING=${{ vars.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ vars.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
 
       - name: Show URL
-        run: gcloud run services describe ${{ steps.env.outputs.service }} --region ${{ env.REGION }} --format='value(status.url)'
+        run: gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format='value(status.url)'
