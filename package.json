@@ -19,6 +19,7 @@
     "users": "ts-node src/users/cli.ts"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "@google-cloud/firestore": "^8.6.0",

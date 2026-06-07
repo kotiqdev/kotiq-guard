@@ -37,6 +37,9 @@ const EnvSchema = z.object({
     // Optional GitHub token for the repo scanner: lifts the 60/hr unauthenticated rate limit to
     // 5000/hr and lets it read private repos. Read-only; never required.
     GITHUB_TOKEN: z.string().optional(),
+    // Abuse guard: max requests per identity (verified email when present, else client IP) per window.
+    RATE_LIMIT_MAX: z.coerce.number().default(60),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
     PORT: z.coerce.number().default(8080),
 });
 
@@ -67,6 +70,8 @@ export interface Env {
     usersFile: string;
     usersCollection: string;
     githubToken?: string;
+    rateLimitMax: number;
+    rateLimitWindowMs: number;
     port: number;
 }
 
@@ -90,5 +95,7 @@ export const env: Env = {
     usersFile: parsed.USERS_FILE,
     usersCollection: parsed.USERS_COLLECTION,
     githubToken: parsed.GITHUB_TOKEN,
+    rateLimitMax: parsed.RATE_LIMIT_MAX,
+    rateLimitWindowMs: parsed.RATE_LIMIT_WINDOW_MS,
     port: parsed.PORT,
 };

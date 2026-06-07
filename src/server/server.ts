@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
@@ -37,7 +38,8 @@ function abortWhenClientGone(rawReq: IncomingMessage, rawRes: ServerResponse, la
 const activeRequests = new Map<string, AbortController>();
 
 async function start(): Promise<void> {
-    const app = Fastify({ logger: false });
+    // trustProxy → req.ip reflects the client (Cloud Run sets X-Forwarded-For), used as a rate-limit key.
+    const app = Fastify({ logger: false, trustProxy: true });
 
     // Permissive CORS so the browser extension (and local tools) can call /scan.
     // The Authorization header makes requests "non-simple", so the browser sends a CORS preflight
@@ -48,6 +50,29 @@ async function start(): Promise<void> {
         reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         reply.header('Access-Control-Max-Age', '86400');
         if (req.method === 'OPTIONS') return reply.code(204).send(); // answer the preflight
+    });
+
+    // Abuse guard: cap requests per identity within a window, before any heavy work. Key = verified
+    // email when a token is present (decoded, not verified — fine for a rate key), else client IP, so
+    // one noisy caller can't starve others. In-memory per instance (approximate across instances) —
+    // a per-user Firestore quota is the accurate follow-up. Tune via RATE_LIMIT_*.
+    await app.register(rateLimit, {
+        max: env.rateLimitMax,
+        timeWindow: env.rateLimitWindowMs,
+        allowList: (req) => req.method === 'OPTIONS' || req.url === '/health',
+        keyGenerator: (req) => {
+            const header = req.headers.authorization ?? '';
+            const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+            if (token) {
+                try {
+                    const id = decodeIdTokenUnverified(token);
+                    if (id.email) return `u:${id.email.toLowerCase()}`;
+                } catch {
+                    /* malformed token → fall through to IP */
+                }
+            }
+            return `ip:${req.ip}`;
+        },
     });
 
     // Auth gate. When enabled, every request (except /health and CORS preflight) must carry a
