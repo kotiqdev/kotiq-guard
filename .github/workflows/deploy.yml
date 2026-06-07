@@ -53,6 +53,3 @@ jobs:
             --allow-unauthenticated \
             --max-instances 2 \
             --set-env-vars "^##^LLM_PROVIDER=vertex##LLM_MAX_OUTPUT_TOKENS=${{ secrets.LLM_MAX_OUTPUT_TOKENS }}##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ secrets.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ secrets.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ secrets.ALLOWED_DOMAINS }}##USERS_STORE=${{ secrets.USERS_STORE }}##LANGSMITH_TRACING=${{ vars.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ vars.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
-
-      - name: Show URL
-        run: gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format='value(status.url)'
