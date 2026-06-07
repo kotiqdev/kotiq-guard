@@ -7,6 +7,7 @@
 // The deterministic verdict is the floor: the analyst can only RAISE it (via `escalate`), never lower.
 
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { traceable } from 'langsmith/traceable';
 
 import { debug } from '../logger';
 import { contentToText } from './llm/content';
@@ -84,7 +85,7 @@ function normEscalate(v: unknown): Escalate {
     return v === 'malicious' || v === 'suspicious' || v === 'needs_review' ? v : 'none';
 }
 
-export async function repoExplain(
+async function repoExplainImpl(
     owner: string,
     repo: string,
     result: RepoResult,
@@ -153,4 +154,23 @@ export async function repoExplain(
     }
 
     return { explanation, grounded, escalate };
+}
+
+// One parent trace per /repo/explain: the analyst ⇄ critic calls (and any retries) nest under a
+// single run in LangSmith — so you can see all LLM calls for one request together — tagged with the
+// repo and request id (rid) for filtering. No-op when tracing is off.
+export async function repoExplain(
+    owner: string,
+    repo: string,
+    result: RepoResult,
+    config?: RunnableConfig,
+): Promise<RepoExplainResult> {
+    const rid = config?.metadata?.rid as string | undefined;
+    const traced = traceable(repoExplainImpl, {
+        name: 'repoExplain',
+        run_type: 'chain',
+        metadata: { owner, repo, ...(rid ? { rid } : {}) },
+        tags: ['repo-explain'],
+    });
+    return traced(owner, repo, result, config);
 }
