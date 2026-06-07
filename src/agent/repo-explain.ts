@@ -129,7 +129,7 @@ async function repoExplainImpl(
         });
         debug('repoAnalyst → calling LLM (attempt', String(attempt) + ')');
         const t0 = Date.now();
-        const res = await makeModel(agents.repoAnalyst.temperature).invoke(analystPrompt, config);
+        const res = await makeModel(agents.repoAnalyst.temperature).invoke(analystPrompt, { ...config, runName: 'repoAnalyst' });
         const text = contentToText(res.content);
         const obj = extractJson(text);
         explanation = (typeof obj?.summary === 'string' ? obj.summary : text.replace(/<think>[\s\S]*?<\/think>/g, '')).trim();
@@ -142,7 +142,7 @@ async function repoExplainImpl(
             liveCode,
             analysis: JSON.stringify(obj ?? { summary: explanation }),
         });
-        const cres = await makeModel(agents.repoCritic.temperature).invoke(criticPrompt, config);
+        const cres = await makeModel(agents.repoCritic.temperature).invoke(criticPrompt, { ...config, runName: 'repoCritic' });
         const cobj = extractJson(contentToText(cres.content));
         if (cobj?.ok !== false) {
             grounded = true;

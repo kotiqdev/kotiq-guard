@@ -105,7 +105,7 @@ async function securityNode(state: State, config?: RunnableConfig): Promise<Part
 
     debug('security → analyzing', Object.keys(hooks).length, 'hook(s),', sources.length, 'readable source(s)', `(attempt ${attempt})`);
     const started = Date.now();
-    const res = await makeModel(agents.security.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.security.temperature).invoke(prompt, { ...config, runName: 'security' });
     debug(`security ← done (${Date.now() - started}ms)`);
 
     const obj = extractJson(contentToText(res.content));
@@ -129,7 +129,7 @@ async function criticNode(state: State, config?: RunnableConfig): Promise<Partia
 
     debug('critic → calling LLM');
     const t0 = Date.now();
-    const res = await makeModel(agents.critic.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.critic.temperature).invoke(prompt, { ...config, runName: 'critic' });
     debug(`critic ← done (${Date.now() - t0}ms)`);
     const obj = extractJson(contentToText(res.content));
     const ok = obj?.ok !== false; // can't parse / not explicitly false → don't block
@@ -206,7 +206,7 @@ async function explainNode(state: State, config?: RunnableConfig): Promise<Parti
 
     debug('explain → calling LLM');
     const started = Date.now();
-    const res = await makeModel(agents.explain.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.explain.temperature).invoke(prompt, { ...config, runName: 'explain' });
     debug(`explain ← done (${Date.now() - started}ms)`);
     const explanation = contentToText(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return { explanation };
