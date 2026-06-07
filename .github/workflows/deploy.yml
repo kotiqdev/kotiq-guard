@@ -1,7 +1,7 @@
 # Deploy — the pushed branch selects the GitHub Environment (develop → dev, main → prod).
 # Auth is keyless via OIDC (Workload Identity Federation); no stored keys.
-# Dormant until the environment's WIF_PROVIDER variable is set (job skipped otherwise).
-# Configure each environment's Variables/Secrets under Settings → Environments.
+# Each environment's Variables/Secrets live under Settings → Environments.
+# Pushing to a branch whose environment isn't configured yet will fail at the auth step (expected).
 name: Deploy
 
 on:
@@ -20,7 +20,6 @@ jobs:
   deploy:
     # Branch selects the environment; each carries its own config.
     environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
-    if: ${{ vars.WIF_PROVIDER != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
