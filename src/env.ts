@@ -16,6 +16,13 @@ const EnvSchema = z.object({
     VERTEX_MODEL: z.string().default('gemini-2.5-flash'),
     // Cost guard: hard cap on tokens a cloud model may emit per call (Ollama is local/free, exempt).
     LLM_MAX_OUTPUT_TOKENS: z.coerce.number().default(1024),
+    // Cap the model's internal "thinking" tokens (gemini-2.5 reasoning). Lower = faster, less depth.
+    // Unset/empty → model default (dynamic). 0 → thinking off. Empty is treated as unset so a
+    // forgotten secret doesn't silently disable thinking.
+    LLM_THINKING_BUDGET: z.preprocess(
+        (v) => (v === '' || v == null ? undefined : v),
+        z.coerce.number().int().nonnegative().optional(),
+    ),
     // Auth: verify a Google ID token and check it against an allow-list before serving /scan.
     AUTH_ENABLED: z.string().optional(), // "1"/"true" → on. Off locally, on in the cloud.
     GOOGLE_OAUTH_CLIENT_ID: z.string().optional(), // expected `aud` of the ID token
@@ -51,6 +58,7 @@ export interface Env {
     vertexLocation: string;
     vertexModel: string;
     maxOutputTokens: number;
+    thinkingBudget?: number;
     authEnabled: boolean;
     oauthClientId?: string;
     allowedEmails: Set<string>;
@@ -73,6 +81,7 @@ export const env: Env = {
     vertexLocation: parsed.GOOGLE_CLOUD_LOCATION,
     vertexModel: parsed.VERTEX_MODEL,
     maxOutputTokens: parsed.LLM_MAX_OUTPUT_TOKENS,
+    thinkingBudget: parsed.LLM_THINKING_BUDGET,
     authEnabled: parsed.AUTH_ENABLED === '1' || parsed.AUTH_ENABLED === 'true',
     oauthClientId: parsed.GOOGLE_OAUTH_CLIENT_ID,
     allowedEmails: toLowerSet(parsed.ALLOWED_EMAILS),
