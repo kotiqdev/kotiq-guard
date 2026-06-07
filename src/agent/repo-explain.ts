@@ -9,6 +9,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 
 import { debug } from '../logger';
+import { contentToText } from './llm/content';
 import { makeModel } from './llm/model';
 import { agents, render } from './prompts';
 import { Verdict } from '../core/models/enums';
@@ -128,8 +129,9 @@ export async function repoExplain(
         debug('repoAnalyst → calling LLM (attempt', String(attempt) + ')');
         const t0 = Date.now();
         const res = await makeModel(agents.repoAnalyst.temperature).invoke(analystPrompt, config);
-        const obj = extractJson(String(res.content));
-        explanation = (typeof obj?.summary === 'string' ? obj.summary : String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '')).trim();
+        const text = contentToText(res.content);
+        const obj = extractJson(text);
+        explanation = (typeof obj?.summary === 'string' ? obj.summary : text.replace(/<think>[\s\S]*?<\/think>/g, '')).trim();
         escalate = normEscalate(obj?.escalate);
         debug(`repoAnalyst ← done (${Date.now() - t0}ms) · escalate=${escalate}`);
 
@@ -140,7 +142,7 @@ export async function repoExplain(
             analysis: JSON.stringify(obj ?? { summary: explanation }),
         });
         const cres = await makeModel(agents.repoCritic.temperature).invoke(criticPrompt, config);
-        const cobj = extractJson(String(cres.content));
+        const cobj = extractJson(contentToText(cres.content));
         if (cobj?.ok !== false) {
             grounded = true;
             debug('repoCritic ← grounded');
