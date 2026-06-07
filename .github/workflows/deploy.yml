@@ -13,7 +13,6 @@ permissions:
   id-token: write # required: lets the job mint an OIDC token for Workload Identity Federation
 
 env:
-  REGION: europe-west1
   SERVICE: kotiq-guard
 
 jobs:
@@ -34,11 +33,11 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
 
       - name: Build & push image
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPO }}/kotiq-guard:${{ github.sha }}"
+          IMAGE="${{ secrets.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPO }}/kotiq-guard:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
@@ -48,8 +47,8 @@ jobs:
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
             --image "$IMAGE" \
-            --region ${{ env.REGION }} \
+            --region ${{ secrets.REGION }} \
             --service-account ${{ secrets.RUNTIME_SA }} \
             --allow-unauthenticated \
             --max-instances 2 \
-            --set-env-vars "^##^LLM_PROVIDER=vertex##LLM_MAX_OUTPUT_TOKENS=${{ secrets.LLM_MAX_OUTPUT_TOKENS }}##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ secrets.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ secrets.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ secrets.ALLOWED_DOMAINS }}##USERS_STORE=${{ secrets.USERS_STORE }}##LANGSMITH_TRACING=${{ vars.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ vars.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
+            --set-env-vars "^##^LLM_PROVIDER=${{ secrets.LLM_PROVIDER }}##LLM_MAX_OUTPUT_TOKENS=${{ secrets.LLM_MAX_OUTPUT_TOKENS }}##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ secrets.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ secrets.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ secrets.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ secrets.ALLOWED_DOMAINS }}##USERS_STORE=${{ secrets.USERS_STORE }}##LANGCHAIN_CALLBACKS_BACKGROUND=false##LANGSMITH_TRACING=${{ secrets.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ secrets.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
