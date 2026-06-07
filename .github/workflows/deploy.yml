@@ -27,9 +27,9 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ vars.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.DEPLOYER_SA }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.DEPLOYER_SA }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -38,7 +38,7 @@ jobs:
 
       - name: Build & push image
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/kotiq-guard:${{ github.sha }}"
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPO }}/kotiq-guard:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
@@ -49,10 +49,10 @@ jobs:
           gcloud run deploy ${{ env.SERVICE }} \
             --image "$IMAGE" \
             --region ${{ env.REGION }} \
-            --service-account ${{ vars.RUNTIME_SA }} \
+            --service-account ${{ secrets.RUNTIME_SA }} \
             --allow-unauthenticated \
             --max-instances 2 \
-            --set-env-vars "^##^LLM_PROVIDER=vertex##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ vars.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ vars.ALLOWED_DOMAINS }}##USERS_STORE=${{ vars.USERS_STORE }}##LANGSMITH_TRACING=${{ vars.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ vars.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
+            --set-env-vars "^##^LLM_PROVIDER=vertex##AUTH_ENABLED=true##GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}##GOOGLE_CLOUD_LOCATION=${{ env.REGION }}##GOOGLE_OAUTH_CLIENT_ID=${{ secrets.OAUTH_CLIENT_ID }}##ALLOWED_EMAILS=${{ secrets.ALLOWED_EMAILS }}##ALLOWED_DOMAINS=${{ secrets.ALLOWED_DOMAINS }}##USERS_STORE=${{ secrets.USERS_STORE }}##LANGSMITH_TRACING=${{ vars.LANGSMITH_TRACING }}##LANGSMITH_PROJECT=${{ vars.LANGSMITH_PROJECT }}##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}"
 
       - name: Show URL
         run: gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format='value(status.url)'
