@@ -190,7 +190,7 @@ async function start(): Promise<void> {
             if (ac.signal.aborted) return { aborted: true };
 
             debug('GET /repo/explain', `${owner}/${repo}`, '·', result.worst);
-            const ai = await repoExplain(owner, repo, result, { signal: ac.signal });
+            const ai = await repoExplain(owner, repo, result, { signal: ac.signal, metadata: { rid } });
             const worst = worseVerdict(result.worst, escalateToVerdict(ai.escalate)); // escalate-only
             debug(`/repo/explain ← ${Date.now() - t0}ms · grounded=${ai.grounded} · escalate=${ai.escalate}`);
             return { explanation: ai.explanation, grounded: ai.grounded, worst };
@@ -233,7 +233,7 @@ async function start(): Promise<void> {
 
             const t0 = Date.now();
             try {
-                const result = await guardGraph.invoke({ packageName: pkg, withExplanation }, { signal: ac.signal });
+                const result = await guardGraph.invoke({ packageName: pkg, withExplanation }, { signal: ac.signal, metadata: { pkg, rid } });
                 debug(`/scan ← total ${Date.now() - t0}ms ·`, pkg, result.verdict?.verdict ?? '?');
                 return {
                     ...result.verdict,
