@@ -28,6 +28,8 @@ What you get:
 
 Kotiq is built to be trustworthy: the verdict comes from a deterministic engine, and the AI can only raise concern, never hide it.
 
+Scope: Kotiq currently focuses on the Node.js ecosystem — npm packages and Node projects on GitHub. Support for other ecosystems may follow.
+
 Free (Lite): the deterministic safety verdict.
 Pro: the AI explanation layer.
 

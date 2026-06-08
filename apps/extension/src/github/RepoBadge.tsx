@@ -5,7 +5,6 @@ import type { RepoResult } from '../lite/repo';
 import { loadSession, SESSION_KEY, type Session } from '../session';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
-import { Spinner } from '../ui/primitives';
 import { badgePill, dropdownPanel, pillName, VERDICT_COLOR } from '../ui/theme';
 import { AiAnalysis } from './AiAnalysis';
 import { RepoFindings } from './RepoFindings';
@@ -30,7 +29,6 @@ export function RepoBadge() {
     const [session, setSession] = useState<Session | null | undefined>(undefined);
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
-    const [scanning, setScanning] = useState(false);
     const [open, setOpen] = useState(false);
     const [aiBusy, setAiBusy] = useState(false); // AI explain running → collapsed Dock shows a spinner
 
@@ -75,7 +73,6 @@ export function RepoBadge() {
         if (!target || session === undefined) return;
         if (REQUIRE_AUTH && !session) return; // need sign-in first
         let cancelled = false; // a newer scan / navigation supersedes this one
-        setScanning(true);
         void chrome.runtime
             .sendMessage({ type: 'repoScan', owner: target.owner, repo: target.repo })
             .then((r: { status?: number; result?: RepoResult }) => {
@@ -85,9 +82,6 @@ export function RepoBadge() {
             })
             .catch(() => {
                 if (!cancelled) setResult(null);
-            })
-            .finally(() => {
-                if (!cancelled) setScanning(false);
             });
         return () => {
             cancelled = true;
@@ -117,19 +111,10 @@ export function RepoBadge() {
         );
     }
 
-    // Signed-in users see Kotiq working while GitHub is being analyzed (it can take a few seconds).
-    if (scanning && !result) {
-        return (
-            <Dock status={{ busy: true }}>
-                <div style={{ ...badgePill('#6e7781', 'default'), display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Spinner size={13} color="#ffffff" />
-                    <span style={pillName}>{target.repo}</span> · scanning…
-                </div>
-            </Dock>
-        );
-    }
-
-    if (!result || !result.found) return null; // not a Node repo → show nothing
+    // Show nothing until we have a positive result (consistent with the npm badge). Avoids a
+    // "scanning…" badge that would flash then vanish on repos with no (root) Node manifest — e.g.
+    // tutorial/monorepo layouts. A proper verdict for those comes with the recursive manifest scan.
+    if (!result || !result.found) return null;
 
     const color = VERDICT_COLOR[result.worst] ?? '#6e7781';
     const selfCount = result.self?.findings.length ?? 0;
