@@ -8,8 +8,9 @@
     "build": "vite build",
     "build:dev": "vite build --mode dev",
     "build:prod": "vite build --mode prod",
-    "package:dev": "npm run build:dev && cd dist && zip -r -X ../kotiq-guard-extension-dev.zip . && cd ..",
-    "package:prod": "npm run build:prod && cd dist && zip -r -X ../kotiq-guard-extension-prod.zip . && cd .."
+    "build:prod-local": "vite build --mode prod-local",
+    "package:dev": "npm run build:dev && mkdir -p builds && cd dist && zip -r -X \"../builds/kotiq-guard-dev-v$npm_package_version-$(date +%Y%m%d-%H%M).zip\" . && cd ..",
+    "package:prod": "npm run build:prod && mkdir -p builds && cd dist && zip -r -X \"../builds/kotiq-guard-prod-v$npm_package_version-$(date +%Y%m%d-%H%M).zip\" . && cd .."
   },
   "dependencies": {
     "react": "^18.3.1",

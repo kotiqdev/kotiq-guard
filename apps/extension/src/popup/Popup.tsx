@@ -61,7 +61,13 @@ export function Popup() {
     return (
         <div style={S.shell}>
             <div style={S.header}>
-                <span style={{ fontSize: 18 }}>🐱</span>
+                <img
+                    src={chrome.runtime.getURL('icons/icon-48.png')}
+                    alt=""
+                    width={22}
+                    height={22}
+                    style={{ display: 'block' }}
+                />
                 <strong>Kotiq Guard</strong>
                 <span
                     style={{
