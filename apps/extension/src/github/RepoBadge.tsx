@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 
 import { REQUIRE_AUTH } from '../config';
 import type { RepoResult } from '../lite/repo';
-import { loadSession, type Session } from '../session';
+import { loadSession, SESSION_KEY, type Session } from '../session';
+import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
 import { Spinner } from '../ui/primitives';
-import { badgePill, badgeShell, dropdownPanel, VERDICT_COLOR } from '../ui/theme';
+import { badgePill, dropdownPanel, pillName, VERDICT_COLOR } from '../ui/theme';
 import { AiAnalysis } from './AiAnalysis';
 import { RepoFindings } from './RepoFindings';
 
@@ -25,29 +26,72 @@ function repoFromUrl(): { owner: string; repo: string } | null {
 }
 
 export function RepoBadge() {
-    const [target] = useState(repoFromUrl());
+    const [target, setTarget] = useState(repoFromUrl());
     const [session, setSession] = useState<Session | null | undefined>(undefined);
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
     const [scanning, setScanning] = useState(false);
     const [open, setOpen] = useState(false);
+    const [aiBusy, setAiBusy] = useState(false); // AI explain running → collapsed Dock shows a spinner
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
     }, []);
 
+    // Live-sync sign-in/out from the popup or background (session written in another context).
+    useEffect(() => {
+        const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string): void => {
+            if (area !== 'local' || !(SESSION_KEY in changes)) return;
+            void loadSession().then((s) => {
+                setResult(null); // re-scan under the new session
+                setSession(s ?? null);
+            });
+        };
+        chrome.storage.onChanged.addListener(onChange);
+        return () => chrome.storage.onChanged.removeListener(onChange);
+    }, []);
+
+    // GitHub is a SPA (Turbo) — moving between repos changes the URL without a full reload. Poll the
+    // URL and re-target only when the REPO actually changes (not on tab switches within one repo).
+    useEffect(() => {
+        let lastKey = target ? `${target.owner}/${target.repo}` : '';
+        let lastHref = location.href;
+        const id = setInterval(() => {
+            if (location.href === lastHref) return;
+            lastHref = location.href;
+            const t = repoFromUrl();
+            const key = t ? `${t.owner}/${t.repo}` : '';
+            if (key === lastKey) return; // same repo (e.g. Issues→Pull requests) → keep the result
+            lastKey = key;
+            setResult(null);
+            setOpen(false);
+            setAiBusy(false);
+            setTarget(t);
+        }, 600);
+        return () => clearInterval(id);
+    }, []);
+
     useEffect(() => {
         if (!target || session === undefined) return;
         if (REQUIRE_AUTH && !session) return; // need sign-in first
+        let cancelled = false; // a newer scan / navigation supersedes this one
         setScanning(true);
         void chrome.runtime
             .sendMessage({ type: 'repoScan', owner: target.owner, repo: target.repo })
             .then((r: { status?: number; result?: RepoResult }) => {
+                if (cancelled) return;
                 if (r?.status === 401) return setSession(null);
                 setResult(r?.result ?? null);
             })
-            .catch(() => setResult(null))
-            .finally(() => setScanning(false));
+            .catch(() => {
+                if (!cancelled) setResult(null);
+            })
+            .finally(() => {
+                if (!cancelled) setScanning(false);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [target, session]);
 
     async function doSignIn() {
@@ -76,12 +120,12 @@ export function RepoBadge() {
     // Signed-in users see Kotiq working while GitHub is being analyzed (it can take a few seconds).
     if (scanning && !result) {
         return (
-            <div style={badgeShell}>
+            <Dock status={{ busy: true }}>
                 <div style={{ ...badgePill('#6e7781', 'default'), display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Spinner size={13} color="#ffffff" />
-                    🐱 Kotiq · scanning repo…
+                    <span style={pillName}>{target.repo}</span> · scanning…
                 </div>
-            </div>
+            </Dock>
         );
     }
 
@@ -94,18 +138,18 @@ export function RepoBadge() {
         : `· ${result.withHooks} hook deps`;
 
     return (
-        <div style={badgeShell}>
+        <Dock status={{ busy: aiBusy, color }}>
             <div onClick={() => setOpen((o) => !o)} style={badgePill(color)}>
-                🐱 Kotiq: {result.worst}
+                <span style={pillName}>{target.repo}</span>: {result.worst}
                 <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>{subtitle}</span>
             </div>
 
             {open && (
                 <div style={{ ...dropdownPanel, width: 360, maxHeight: '70vh', overflowY: 'auto' }}>
-                    {result.worst !== 'SAFE' && <AiAnalysis owner={target.owner} repo={target.repo} />}
+                    {result.worst !== 'SAFE' && <AiAnalysis owner={target.owner} repo={target.repo} onBusy={setAiBusy} />}
                     <RepoFindings result={result} />
                 </div>
             )}
-        </div>
+        </Dock>
     );
 }

@@ -4,8 +4,9 @@ import { REQUIRE_AUTH } from '../config';
 import type { LiteResult } from '../lite/engine';
 import { loadSession, SESSION_KEY, type Session } from '../session';
 import { AiBlock } from '../ui/AiBlock';
+import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
-import { badgePill, badgeShell, dropdownPanel, panel, sectionLabel, VERDICT_COLOR } from '../ui/theme';
+import { badgePill, dropdownPanel, panel, pillName, sectionLabel, VERDICT_COLOR } from '../ui/theme';
 
 type ScanResult = {
     verdict: string;
@@ -17,15 +18,13 @@ type ScanResult = {
     security?: { level?: string; note?: string };
 };
 
-// The exact version the user is viewing: from the /v/<version> URL, else npm's embedded page data.
+// The exact version the user is viewing — ONLY from the /v/<version> URL. We deliberately do NOT read
+// npm's embedded page JSON: on SPA navigation it lags one package behind, which made us scan a
+// non-existent spec like express@<prev-pkg-version>. No /v/ in the URL → null → scan latest, and show
+// the version the backend actually resolved (data.scanned_version).
 function versionFromPage(): string | null {
     const u = location.pathname.match(/\/v\/([^/]+)/);
-    if (u) return decodeURIComponent(u[1]);
-    for (const s of Array.from(document.querySelectorAll('script'))) {
-        const m = (s.textContent ?? '').match(/"packageVersion":\{[\s\S]*?"version":"([^"]+)"/);
-        if (m) return m[1];
-    }
-    return null;
+    return u ? decodeURIComponent(u[1]) : null;
 }
 
 // /package/<name> or /package/@scope/name, with the page's version appended when we can find it.
@@ -35,6 +34,13 @@ function packageSpecFromPage(): string | null {
     const name = decodeURIComponent(m[1]);
     const version = versionFromPage();
     return version ? `${name}@${version}` : name;
+}
+
+// Just the package name for display (drop a trailing @version; a scoped name keeps its @scope/).
+function pkgNameFromSpec(spec: string | null): string {
+    if (!spec) return '';
+    const at = spec.lastIndexOf('@');
+    return at > 0 ? spec.slice(0, at) : spec;
 }
 
 // Reply shape from the background worker for scan/explain.
@@ -57,9 +63,9 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
     const version = pageVersion ?? result?.version ?? null;
 
     return (
-        <div style={badgeShell}>
+        <Dock status={{ busy: !result, color: result ? color : undefined }}>
             <div onClick={() => setOpen((o) => !o)} style={badgePill(color)}>
-                🐱 Kotiq: {result?.verdict ?? '…'}
+                <span style={pillName}>{pkgNameFromSpec(pkg)}</span>: {result?.verdict ?? '…'}
                 {version && <span style={{ marginLeft: 6, fontWeight: 400, opacity: 0.85 }}>· {version}</span>}
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, background: 'rgba(255,255,255,.25)', borderRadius: 999, padding: '1px 6px' }}>
                     LITE
@@ -77,13 +83,13 @@ function LiteBadge({ pkg, pageVersion }: { pkg: string; pageVersion: string | nu
                     </div>
                 </div>
             )}
-        </div>
+        </Dock>
     );
 }
 
 export function Badge() {
-    const [pkg] = useState(packageSpecFromPage());
-    const [pageVersion] = useState(versionFromPage());
+    const [pkg, setPkg] = useState(packageSpecFromPage());
+    const [pageVersion, setPageVersion] = useState(versionFromPage());
     const [data, setData] = useState<ScanResult | null>(null); // fast deterministic scan
     const [full, setFull] = useState<ScanResult | null>(null); // after "Explain" (LLM agents)
     const [loading, setLoading] = useState(false);
@@ -114,20 +120,52 @@ export function Badge() {
         return () => chrome.storage.onChanged.removeListener(onChange);
     }, []);
 
+    // npm is a SPA — going to another package changes the URL via history (no full reload), so the
+    // content script never re-reads. Poll the URL; on a package change hide the stale verdict and
+    // re-scan. A short settle delay lets the SPA render the new package's data before we read it.
+    useEffect(() => {
+        let lastHref = location.href;
+        let settle: ReturnType<typeof setTimeout>;
+        const id = setInterval(() => {
+            if (location.href === lastHref) return;
+            lastHref = location.href;
+            setData(null);
+            setFull(null);
+            setLite(false);
+            setOpen(false);
+            clearTimeout(settle);
+            settle = setTimeout(() => {
+                setPkg(packageSpecFromPage());
+                setPageVersion(versionFromPage());
+            }, 500);
+        }, 600);
+        return () => {
+            clearInterval(id);
+            clearTimeout(settle);
+        };
+    }, []);
+
     useEffect(() => {
         if (!pkg || session === undefined) return; // wait until we know the session
         if (REQUIRE_AUTH && !session) return; // not signed in → never touch the cloud
+        let cancelled = false; // a newer scan / navigation supersedes this one
         // Go through the background worker: content scripts can't reach localhost (Chrome blocks
         // public-page → loopback). The background context (host_permissions) can.
         void chrome.runtime
             .sendMessage({ type: 'scan', pkg, from: location.href })
             .then((r: ScanReply) => {
+                if (cancelled) return;
                 if (r?.status === 401) return setSession(null); // token rejected → sign-in badge
                 if (r?.status === 403) return setLite(true); // valid user, not allow-listed → Lite
                 if (r?.ok && r.data) setData(r.data);
                 else setData({ verdict: 'error' });
             })
-            .catch(() => setData({ verdict: 'error' }));
+            .catch(() => {
+                if (!cancelled) setData({ verdict: 'error' });
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [pkg, session]);
 
     // Ask the background worker to run the Google sign-in flow (content scripts can't do it).
@@ -172,6 +210,7 @@ export function Badge() {
     // Badge reflects the effective verdict (security can escalate it once we've run the agents).
     const shown = full?.effective_verdict ?? data.verdict;
     const color = VERDICT_COLOR[shown] ?? '#6e7781';
+    const pkgName = pkgNameFromSpec(pkg);
 
     const version = pageVersion ?? data.scanned_version ?? null;
     const isFallback = !pageVersion && !!data.scanned_version;
@@ -199,9 +238,9 @@ export function Badge() {
     }
 
     return (
-        <div style={badgeShell}>
+        <Dock status={{ busy: loading, color }}>
             <div onClick={() => setOpen((o) => !o)} title={data.summary} style={badgePill(color)}>
-                🐱 Kotiq: {shown}
+                <span style={pillName}>{pkgName}</span>: {shown}
                 {version && (
                     <span style={{ marginLeft: 6, fontWeight: 400, opacity: isFallback ? 0.55 : 0.85 }}>
                         · {version}
@@ -280,6 +319,6 @@ export function Badge() {
                     )}
                 </div>
             )}
-        </div>
+        </Dock>
     );
 }

@@ -1,5 +1,14 @@
 // Shared visual tokens for Kotiq badges (GitHub repo badge, npm package badge).
 
+// The scanned package/repo name on a verdict pill — a soft chip so it reads as the SUBJECT, distinct
+// from the verdict word (which stays the bold, primary signal). Works on any verdict-coloured pill.
+export const pillName = {
+    fontWeight: 500,
+    background: 'rgba(255,255,255,.18)',
+    borderRadius: 6,
+    padding: '0 6px',
+} as const;
+
 export const VERDICT_COLOR: Record<string, string> = {
     SAFE: '#1a7f37',
     NEEDS_REVIEW: '#6e7781',
@@ -23,9 +32,6 @@ export const dropdownPanel = { marginTop: 6, background: '#fff', color: '#24292f
 
 // Small uppercase section caption.
 export const sectionLabel = { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px', color: '#8a929b', marginBottom: 4 } as const;
-
-// Fixed top-right anchor shared by every badge.
-export const badgeShell = { position: 'fixed', top: 12, right: 12, zIndex: 99999, font: '13px system-ui, sans-serif' } as const;
 
 // The coloured verdict pill.
 export const badgePill = (bg: string, cursor: 'pointer' | 'default' = 'pointer') =>
