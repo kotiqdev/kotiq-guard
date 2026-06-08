@@ -1,19 +1,28 @@
 # dependencies
 node_modules/
 
-# secrets — NEVER commit
+# secrets / per-env config — NEVER commit real values (public repo). Only *.example templates.
 .env
 .env.*
-!.env.example
+!.env*.example
 
 # build output
 dist/
 *.tsbuildinfo
+# packaged extension (store upload artifacts)
+*.zip
+
+# local user store (dev) — holds user emails, not for git
+data/users.json
 
 # editors / tooling
 .claude
 .idea
 .vscode
+crash.log
+
+# extension signing key — pins the extension id; keep private
+apps/extension/extension-key.pem
 
 # os
 .DS_Store

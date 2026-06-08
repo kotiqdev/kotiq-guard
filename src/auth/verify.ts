@@ -14,5 +14,22 @@ export async function verifyIdToken(idToken: string, audience: string): Promise<
     const ticket = await client.verifyIdToken({ idToken, audience });
     const p = ticket.getPayload();
     if (!p?.email) throw new Error('id token has no email claim');
-    return { email: p.email, emailVerified: p.email_verified === true, hd: p.hd };
+    return { email: p.email, emailVerified: p.email_verified === true, hd: p.hd, name: p.name, picture: p.picture };
+}
+
+// DEV ONLY: read the claims WITHOUT verifying the signature. Used locally when no OAuth client id is
+// configured (so /me can still resolve a role). NEVER rely on this in prod — always verifyIdToken
+// when oauthClientId is set, because an unverified token's claims can be forged.
+export function decodeIdTokenUnverified(idToken: string): VerifiedIdentity {
+    const payload = idToken.split('.')[1] ?? '';
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const p = JSON.parse(json) as {
+        email?: string;
+        email_verified?: boolean;
+        hd?: string;
+        name?: string;
+        picture?: string;
+    };
+    if (!p.email) throw new Error('id token has no email claim');
+    return { email: p.email, emailVerified: p.email_verified === true, hd: p.hd, name: p.name, picture: p.picture };
 }

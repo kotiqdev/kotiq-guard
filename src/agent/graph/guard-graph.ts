@@ -17,6 +17,7 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
 import { splitSpec } from '../../cli/scan';
 import { debug } from '../../logger';
+import { contentToText } from '../llm/content';
 import { makeModel } from '../llm/model';
 import { agents, render } from '../prompts';
 import { HookSource, VerdictCard } from '../../core/models/contracts';
@@ -104,10 +105,10 @@ async function securityNode(state: State, config?: RunnableConfig): Promise<Part
 
     debug('security → analyzing', Object.keys(hooks).length, 'hook(s),', sources.length, 'readable source(s)', `(attempt ${attempt})`);
     const started = Date.now();
-    const res = await makeModel(agents.security.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.security.temperature).invoke(prompt, { ...config, runName: 'security' });
     debug(`security ← done (${Date.now() - started}ms)`);
 
-    const obj = extractJson(String(res.content));
+    const obj = extractJson(contentToText(res.content));
     const level: SecurityLevel = obj?.level === 'ok' || obj?.level === 'alert' ? obj.level : 'warn';
     const reason = typeof obj?.reason === 'string' && obj.reason.trim() ? obj.reason.trim() : 'Install hooks need review.';
     debug('security verdict:', level, '—', reason);
@@ -128,9 +129,9 @@ async function criticNode(state: State, config?: RunnableConfig): Promise<Partia
 
     debug('critic → calling LLM');
     const t0 = Date.now();
-    const res = await makeModel(agents.critic.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.critic.temperature).invoke(prompt, { ...config, runName: 'critic' });
     debug(`critic ← done (${Date.now() - t0}ms)`);
-    const obj = extractJson(String(res.content));
+    const obj = extractJson(contentToText(res.content));
     const ok = obj?.ok !== false; // can't parse / not explicitly false → don't block
     const issue = typeof obj?.issue === 'string' ? obj.issue : '';
 
@@ -205,9 +206,9 @@ async function explainNode(state: State, config?: RunnableConfig): Promise<Parti
 
     debug('explain → calling LLM');
     const started = Date.now();
-    const res = await makeModel(agents.explain.temperature).invoke(prompt, config);
+    const res = await makeModel(agents.explain.temperature).invoke(prompt, { ...config, runName: 'explain' });
     debug(`explain ← done (${Date.now() - started}ms)`);
-    const explanation = String(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const explanation = contentToText(res.content).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return { explanation };
 }
 

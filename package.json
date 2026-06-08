@@ -6,17 +6,23 @@
   "author": "",
   "type": "commonjs",
   "main": "index.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "guard": "ts-node src/agent/graph/guard-graph.ts",
     "serve": "ts-node src/server/server.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && npm run copy:assets",
     "copy:assets": "cp src/agent/agents.yml dist/agent/agents.yml",
-    "start": "node dist/server/server.js"
+    "start": "node dist/server/server.js",
+    "users": "ts-node src/users/cli.ts"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
+    "@google-cloud/firestore": "^8.6.0",
     "@google/genai": "^1.0.0",
     "@langchain/core": "^1.1.48",
     "@langchain/google-genai": "^2.1.31",

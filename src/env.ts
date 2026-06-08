@@ -16,11 +16,30 @@ const EnvSchema = z.object({
     VERTEX_MODEL: z.string().default('gemini-2.5-flash'),
     // Cost guard: hard cap on tokens a cloud model may emit per call (Ollama is local/free, exempt).
     LLM_MAX_OUTPUT_TOKENS: z.coerce.number().default(1024),
+    // Cap the model's internal "thinking" tokens (gemini-2.5 reasoning). Lower = faster, less depth.
+    // Unset/empty → model default (dynamic). 0 → thinking off. Empty is treated as unset so a
+    // forgotten secret doesn't silently disable thinking.
+    LLM_THINKING_BUDGET: z.preprocess(
+        (v) => (v === '' || v == null ? undefined : v),
+        z.coerce.number().int().nonnegative().optional(),
+    ),
     // Auth: verify a Google ID token and check it against an allow-list before serving /scan.
     AUTH_ENABLED: z.string().optional(), // "1"/"true" → on. Off locally, on in the cloud.
     GOOGLE_OAUTH_CLIENT_ID: z.string().optional(), // expected `aud` of the ID token
     ALLOWED_EMAILS: z.string().optional(), // comma-separated, e.g. "a@x.com,b@y.com"
     ALLOWED_DOMAINS: z.string().optional(), // comma-separated Workspace domains, matched vs verified `hd`
+    // User store (who is pro/blocked): 'file' (dev JSON) | 'firestore' (prod, wired at deploy).
+    USERS_STORE: z.enum(['file', 'firestore']).default('file'),
+    USERS_FILE: z.string().default('data/users.json'),
+    // Firestore collection for the user registry. Each env has its own project (→ its own Firestore),
+    // so 'users' is enough; override only if a project is ever shared between environments.
+    USERS_COLLECTION: z.string().default('users'),
+    // Optional GitHub token for the repo scanner: lifts the 60/hr unauthenticated rate limit to
+    // 5000/hr and lets it read private repos. Read-only; never required.
+    GITHUB_TOKEN: z.string().optional(),
+    // Abuse guard: max requests per identity (verified email when present, else client IP) per window.
+    RATE_LIMIT_MAX: z.coerce.number().default(60),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
     PORT: z.coerce.number().default(8080),
 });
 
@@ -42,10 +61,17 @@ export interface Env {
     vertexLocation: string;
     vertexModel: string;
     maxOutputTokens: number;
+    thinkingBudget?: number;
     authEnabled: boolean;
     oauthClientId?: string;
     allowedEmails: Set<string>;
     allowedDomains: Set<string>;
+    usersStore: 'file' | 'firestore';
+    usersFile: string;
+    usersCollection: string;
+    githubToken?: string;
+    rateLimitMax: number;
+    rateLimitWindowMs: number;
     port: number;
 }
 
@@ -60,9 +86,16 @@ export const env: Env = {
     vertexLocation: parsed.GOOGLE_CLOUD_LOCATION,
     vertexModel: parsed.VERTEX_MODEL,
     maxOutputTokens: parsed.LLM_MAX_OUTPUT_TOKENS,
+    thinkingBudget: parsed.LLM_THINKING_BUDGET,
     authEnabled: parsed.AUTH_ENABLED === '1' || parsed.AUTH_ENABLED === 'true',
     oauthClientId: parsed.GOOGLE_OAUTH_CLIENT_ID,
     allowedEmails: toLowerSet(parsed.ALLOWED_EMAILS),
     allowedDomains: toLowerSet(parsed.ALLOWED_DOMAINS),
+    usersStore: parsed.USERS_STORE,
+    usersFile: parsed.USERS_FILE,
+    usersCollection: parsed.USERS_COLLECTION,
+    githubToken: parsed.GITHUB_TOKEN,
+    rateLimitMax: parsed.RATE_LIMIT_MAX,
+    rateLimitWindowMs: parsed.RATE_LIMIT_WINDOW_MS,
     port: parsed.PORT,
 };

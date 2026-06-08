@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "build:dev": "vite build --mode dev",
+    "build:prod": "vite build --mode prod",
+    "package:dev": "npm run build:dev && cd dist && zip -r -X ../kotiq-guard-extension-dev.zip . && cd ..",
+    "package:prod": "npm run build:prod && cd dist && zip -r -X ../kotiq-guard-extension-prod.zip . && cd .."
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -13,6 +17,7 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.23",
+    "@types/chrome": "^0.1.42",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

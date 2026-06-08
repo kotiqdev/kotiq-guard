@@ -167,6 +167,22 @@ export async function checkDepsDev(name: string, version: string | null = null):
   }
 }
 
+// Last-week npm download count for a package, or null if unknown. Used to tell a genuine typosquat
+// (an obscure look-alike) from a legitimately popular package that merely resembles a shorter name
+// (e.g. msw ~ ms, preact ~ react). Scoped packages aren't supported by this endpoint → null.
+export async function npmWeeklyDownloads(name: string): Promise<number | null> {
+  try {
+    const resp = await fetchWithTimeout(
+      `https://api.npmjs.org/downloads/point/last-week/${encodeURIComponent(name)}`,
+    );
+    if (resp.status !== 200) return null;
+    const data = (await resp.json()) as { downloads?: number };
+    return typeof data.downloads === 'number' ? data.downloads : null;
+  } catch {
+    return null;
+  }
+}
+
 export function checkTyposquat(name: string): ReputationFinding[] {
   try {
     const top = loadTopNpm();

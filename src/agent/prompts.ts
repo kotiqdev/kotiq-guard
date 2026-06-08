@@ -20,6 +20,8 @@ const ConfigSchema = z.object({
         security: AgentSchema,
         critic: AgentSchema,
         explain: AgentSchema,
+        repoAnalyst: AgentSchema,
+        repoCritic: AgentSchema,
     }),
 });
 

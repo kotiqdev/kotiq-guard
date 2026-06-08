@@ -17,6 +17,7 @@ export function makeModel(temperature = 0): BaseChatModel {
             apiKey: env.googleApiKey,
             temperature,
             maxOutputTokens: env.maxOutputTokens, // cost cap: bound the reply length
+            ...(env.thinkingBudget !== undefined ? { maxReasoningTokens: env.thinkingBudget } : {}),
         });
     }
 
@@ -26,6 +27,7 @@ export function makeModel(temperature = 0): BaseChatModel {
             location: env.vertexLocation,
             temperature,
             maxOutputTokens: env.maxOutputTokens, // cost cap: bound the reply length
+            ...(env.thinkingBudget !== undefined ? { maxReasoningTokens: env.thinkingBudget } : {}),
             // project comes from ADC; pass it explicitly when set so local + prod agree.
             ...(env.vertexProject ? { authOptions: { projectId: env.vertexProject } } : {}),
         });
@@ -35,5 +37,8 @@ export function makeModel(temperature = 0): BaseChatModel {
         model: env.ollamaModel,
         baseUrl: env.ollamaBaseUrl,
         temperature,
+        // Ollama has no token budget — only on/off. Treat budget 0 as "disable thinking" (e.g. qwen3);
+        // unset / >0 leaves the model's default (thinking on). The numeric budget only affects cloud.
+        ...(env.thinkingBudget === 0 ? { think: false } : {}),
     });
 }

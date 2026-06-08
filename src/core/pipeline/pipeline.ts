@@ -9,7 +9,7 @@
 // package to disk, never spawns a subprocess.
 
 import { HookSource, VerdictCard } from '../models/contracts';
-import { checkDepsDev, checkOsv, checkTyposquat } from '../osint/osint';
+import { checkDepsDev, checkOsv, checkTyposquat, npmWeeklyDownloads } from '../osint/osint';
 import { aggregateFindings } from '../reporter/reporter';
 import { analyzeManifest } from '../static-analysis/static-analysis';
 import { unpackNpm } from '../unpack/unpack';
@@ -17,6 +17,9 @@ import { unpackNpm } from '../unpack/unpack';
 // Deterministic verdict + the raw install-hook context, so a downstream agent can reason about
 // WHAT the hooks actually do (beyond the signature scan). `hookSources` is the source of any local
 // script the hook runs, if it was shipped in the tarball.
+// A candidate this widely downloaded is an established package, not an obscure typosquat look-alike.
+const POPULAR_WEEKLY_DOWNLOADS = 10_000;
+
 export type ScanResult = {
   card: VerdictCard;
   installHooks: Record<string, string>; // hookName → command string
@@ -34,11 +37,17 @@ export async function analyzeWithContext(name: string, version: string | null = 
   // Use the resolved version (the one that will actually be installed) so OSV/deps.dev only report
   // advisories that affect THAT version — like npm audit, not "every advisory the package ever had".
   const resolvedVersion = found && manifest.version ? manifest.version : version;
-  const [osv, depsdev, typosquat] = await Promise.all([
+  // Edit-distance typosquatting flags a name 1 edit from a popular one — but legit popular packages
+  // also resemble shorter names (msw~ms, preact~react). Only fetch the candidate's own downloads
+  // when a typosquat actually fired, then suppress it if the candidate is itself well-established.
+  const typosquatRaw = checkTyposquat(name);
+  const [osv, depsdev, weeklyDownloads] = await Promise.all([
     checkOsv(name, resolvedVersion),
     checkDepsDev(name, resolvedVersion),
-    Promise.resolve(checkTyposquat(name)),
+    typosquatRaw.length > 0 ? npmWeeklyDownloads(name) : Promise.resolve(null),
   ]);
+  const isEstablished = weeklyDownloads != null && weeklyDownloads >= POPULAR_WEEKLY_DOWNLOADS;
+  const typosquat = isEstablished ? [] : typosquatRaw;
   const reputationFindings = [...osv, ...depsdev, ...typosquat];
 
   const installHooks = manifest.install_hooks ?? {};

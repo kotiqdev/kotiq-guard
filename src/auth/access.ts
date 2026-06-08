@@ -5,6 +5,8 @@ export interface VerifiedIdentity {
     email: string;
     emailVerified: boolean;
     hd?: string; // Google Workspace domain — a VERIFIED claim, set only for Workspace accounts
+    name?: string; // display name (needs the `profile` scope)
+    picture?: string; // avatar URL (needs the `profile` scope)
 }
 
 // Allow if the verified email is explicitly listed, OR the account's verified Workspace domain
