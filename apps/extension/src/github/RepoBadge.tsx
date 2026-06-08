@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { REQUIRE_AUTH } from '../config';
 import type { RepoResult } from '../lite/repo';
 import { loadSession, SESSION_KEY, type Session } from '../session';
+import { ConsentGate, useAcked } from '../ui/consent';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
 import { badgePill, dropdownPanel, pillName, VERDICT_COLOR } from '../ui/theme';
@@ -31,6 +32,7 @@ export function RepoBadge() {
     const [result, setResult] = useState<RepoResult | null>(null);
     const [open, setOpen] = useState(false);
     const [aiBusy, setAiBusy] = useState(false); // AI explain running → collapsed Dock shows a spinner
+    const acked = useAcked(); // first-run consent gate (must accept before any scan)
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -70,7 +72,7 @@ export function RepoBadge() {
     }, []);
 
     useEffect(() => {
-        if (!target || session === undefined) return;
+        if (acked !== true || !target || session === undefined) return; // consent + session first
         if (REQUIRE_AUTH && !session) return; // need sign-in first
         let cancelled = false; // a newer scan / navigation supersedes this one
         void chrome.runtime
@@ -86,7 +88,7 @@ export function RepoBadge() {
         return () => {
             cancelled = true;
         };
-    }, [target, session]);
+    }, [acked, target, session]);
 
     async function doSignIn() {
         setAuthBusy(true);
@@ -99,6 +101,8 @@ export function RepoBadge() {
     }
 
     if (!target) return null;
+    if (acked === undefined) return null; // waiting on the consent flag
+    if (!acked) return <ConsentGate />; // must acknowledge before scanning
 
     if (REQUIRE_AUTH && session === null) {
         return (

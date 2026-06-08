@@ -4,6 +4,7 @@ import { REQUIRE_AUTH } from '../config';
 import type { LiteResult } from '../lite/engine';
 import { loadSession, SESSION_KEY, type Session } from '../session';
 import { AiBlock } from '../ui/AiBlock';
+import { ConsentGate, useAcked } from '../ui/consent';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
 import { badgePill, dropdownPanel, panel, pillName, sectionLabel, VERDICT_COLOR } from '../ui/theme';
@@ -100,6 +101,7 @@ export function Badge() {
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
     const [lite, setLite] = useState(false); // true when the backend says we're not allow-listed (403)
+    const acked = useAcked(); // first-run consent gate (must accept before any scan)
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -146,7 +148,7 @@ export function Badge() {
     }, []);
 
     useEffect(() => {
-        if (!pkg || session === undefined) return; // wait until we know the session
+        if (acked !== true || !pkg || session === undefined) return; // consent + session first
         if (REQUIRE_AUTH && !session) return; // not signed in → never touch the cloud
         let cancelled = false; // a newer scan / navigation supersedes this one
         // Go through the background worker: content scripts can't reach localhost (Chrome blocks
@@ -166,7 +168,7 @@ export function Badge() {
         return () => {
             cancelled = true;
         };
-    }, [pkg, session]);
+    }, [acked, pkg, session]);
 
     // Ask the background worker to run the Google sign-in flow (content scripts can't do it).
     async function doSignIn() {
@@ -193,6 +195,8 @@ export function Badge() {
     }
 
     if (!pkg) return null;
+    if (acked === undefined) return null; // waiting on the consent flag
+    if (!acked) return <ConsentGate />; // must acknowledge before scanning
     if (REQUIRE_AUTH && session === null) {
         return (
             <SignInBadge

@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 
+import { ackConsent, useAcked } from '../ui/consent';
 import { fetchRole, loadSession, signIn, signOut, type Role, type Session } from './auth';
 
 // The popup is a tiny state machine. One of these is shown at a time.
@@ -18,21 +19,10 @@ const C = {
     border: '#2a2a2a',
 };
 
-const ACK_KEY = 'kotiqAcked'; // first-run notice acknowledged (persisted, shown once)
-
 export function Popup() {
     const [view, setView] = useState<View>({ kind: 'loading' });
     const [about, setAbout] = useState(false);
-    const [acked, setAcked] = useState<boolean | null>(null); // null = still reading storage
-
-    useEffect(() => {
-        void chrome.storage.local.get(ACK_KEY).then((o) => setAcked(!!o[ACK_KEY]));
-    }, []);
-
-    function acceptConsent(): void {
-        void chrome.storage.local.set({ [ACK_KEY]: true });
-        setAcked(true);
-    }
+    const acked = useAcked(); // shared first-run consent flag (boolean | undefined)
 
     // On open: restore a cached session, then resolve the tier from the backend.
     useEffect(() => {
@@ -96,12 +86,12 @@ export function Popup() {
                     BETA
                 </span>
             </div>
-            {acked === null ? (
+            {acked === undefined ? (
                 <div style={S.body}>
                     <p style={{ color: C.dim }}>…</p>
                 </div>
             ) : !acked ? (
-                <Consent onAccept={acceptConsent} />
+                <Consent onAccept={ackConsent} />
             ) : (
                 <>
                     <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
