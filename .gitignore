@@ -11,6 +11,7 @@ dist/
 *.tsbuildinfo
 # packaged extension (store upload artifacts)
 *.zip
+apps/extension/builds/
 
 # local user store (dev) — holds user emails, not for git
 data/users.json

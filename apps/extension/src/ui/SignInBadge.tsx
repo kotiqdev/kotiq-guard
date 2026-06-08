@@ -1,7 +1,8 @@
 // Shown when auth is required but the user isn't signed in. Clicking starts Google sign-in via the
 // background worker (content scripts can't run chrome.identity). Shared by the npm + GitHub badges.
 
-import { badgePill, badgeShell } from './theme';
+import { Dock } from './Dock';
+import { badgePill } from './theme';
 
 export function SignInBadge({
     onSignIn,
@@ -17,7 +18,7 @@ export function SignInBadge({
     error?: string | null;
 }) {
     return (
-        <div style={badgeShell}>
+        <Dock status={{ busy }}>
             <div
                 onClick={busy ? undefined : onSignIn}
                 title={title}
@@ -30,6 +31,6 @@ export function SignInBadge({
                     {error}
                 </div>
             )}
-        </div>
+        </Dock>
     );
 }

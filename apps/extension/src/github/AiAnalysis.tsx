@@ -1,15 +1,22 @@
 // Pro "Explain with AI" block for the repo badge. Owns the request state + the analyst⇄critic call
 // and cancel; the presentation is the shared <AiBlock>. Shown only when worst != SAFE.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { AiBlock } from '../ui/AiBlock';
 import { panel } from '../ui/theme';
 
 type AiState = { loading: boolean; text?: string; error?: string; pro?: boolean } | null;
 
-export function AiAnalysis({ owner, repo }: { owner: string; repo: string }) {
+export function AiAnalysis({ owner, repo, onBusy }: { owner: string; repo: string; onBusy?: (busy: boolean) => void }) {
     const [ai, setAi] = useState<AiState>(null);
+
+    // Report "AI thinking" up to the badge so the collapsed Dock can show a spinner.
+    useEffect(() => {
+        onBusy?.(!!ai?.loading);
+    }, [ai, onBusy]);
+    // Reset the badge's busy flag if this block unmounts (e.g. dropdown closed) mid-request.
+    useEffect(() => () => onBusy?.(false), [onBusy]);
 
     async function runExplain() {
         setAi({ loading: true });
