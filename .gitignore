@@ -13,6 +13,9 @@ dist/
 *.zip
 apps/extension/builds/
 
+# store screenshots + recipe — local-only, regenerable marketing assets
+apps/extension/screenshots/
+
 # local user store (dev) — holds user emails, not for git
 data/users.json
 

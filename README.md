@@ -27,6 +27,12 @@ typosquatted package can't quietly exfiltrate your keys.
 - 🔒 **Never executes code** — static inspection only; your machine stays untouched.
 - 🌐 **In place** — a verdict badge on npmjs.com package pages and GitHub repositories.
 
+> [!WARNING]
+> **Kotiq is an extra signal, not a guarantee.** Attackers evolve, and a "safe" verdict can still
+> miss something brand-new. For **any unfamiliar or suspicious repository or package, open and run it
+> in an isolated environment** — a VM, container, or sandbox — never on your main machine. Kotiq helps
+> you decide *what* to inspect; it doesn't replace safe handling.
+
 ## How it works — deterministic floor, AI ceiling
 
 A fast, repeatable **deterministic engine** produces the trustworthy verdict. The **LLM agents** may only
@@ -88,5 +94,3 @@ machine (the engine still fetches the package/repo it analyzes).
 ## Status
 
 Beta. The safety verdict is free for everyone; the AI explanation layer is in limited early access.
-Kotiq is an informational tool, **not a guarantee** — for anything untrusted, run it in an isolated
-environment (VM / container / sandbox).
