@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { REQUIRE_AUTH } from '../config';
 import type { RepoResult } from '../lite/repo';
 import { loadSession, SESSION_KEY, type Session } from '../session';
+import { ConsentGate, useAcked } from '../ui/consent';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
 import { Spinner } from '../ui/primitives';
@@ -30,9 +31,10 @@ export function RepoBadge() {
     const [session, setSession] = useState<Session | null | undefined>(undefined);
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
-    const [scanning, setScanning] = useState(false);
     const [open, setOpen] = useState(false);
+    const [scanning, setScanning] = useState(false);
     const [aiBusy, setAiBusy] = useState(false); // AI explain running → collapsed Dock shows a spinner
+    const acked = useAcked(); // first-run consent gate (must accept before any scan)
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -72,7 +74,7 @@ export function RepoBadge() {
     }, []);
 
     useEffect(() => {
-        if (!target || session === undefined) return;
+        if (acked !== true || !target || session === undefined) return; // consent + session first
         if (REQUIRE_AUTH && !session) return; // need sign-in first
         let cancelled = false; // a newer scan / navigation supersedes this one
         setScanning(true);
@@ -92,7 +94,7 @@ export function RepoBadge() {
         return () => {
             cancelled = true;
         };
-    }, [target, session]);
+    }, [acked, target, session]);
 
     async function doSignIn() {
         setAuthBusy(true);
@@ -105,19 +107,21 @@ export function RepoBadge() {
     }
 
     if (!target) return null;
+    if (acked === undefined) return null; // waiting on the consent flag
+    if (!acked) return <ConsentGate />; // must acknowledge before scanning
 
     if (REQUIRE_AUTH && session === null) {
         return (
             <SignInBadge
                 onSignIn={doSignIn}
                 busy={authBusy}
-                label="Sign in to scan deps"
-                title="Sign in with Google to scan this repo's dependencies"
+                label="Sign in with Google"
+                title="Sign in with Google (the only sign-in method) to scan this repo's dependencies"
             />
         );
     }
 
-    // Signed-in users see Kotiq working while GitHub is being analyzed (it can take a few seconds).
+    // Immediate feedback while the (multi-second) repo scan runs.
     if (scanning && !result) {
         return (
             <Dock status={{ busy: true }}>
@@ -129,7 +133,9 @@ export function RepoBadge() {
         );
     }
 
-    if (!result || !result.found) return null; // not a Node repo → show nothing
+    // Repos with no (root) Node manifest → nothing to assess yet (a proper verdict for nested
+    // manifests comes with the recursive scan). Brief scanning→hidden here is acceptable.
+    if (!result || !result.found) return null;
 
     const color = VERDICT_COLOR[result.worst] ?? '#6e7781';
     const selfCount = result.self?.findings.length ?? 0;
@@ -146,7 +152,7 @@ export function RepoBadge() {
 
             {open && (
                 <div style={{ ...dropdownPanel, width: 360, maxHeight: '70vh', overflowY: 'auto' }}>
-                    {result.worst !== 'SAFE' && <AiAnalysis owner={target.owner} repo={target.repo} onBusy={setAiBusy} />}
+                    <AiAnalysis owner={target.owner} repo={target.repo} onBusy={setAiBusy} />
                     <RepoFindings result={result} />
                 </div>
             )}

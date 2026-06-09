@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 
+import { ackConsent, useAcked } from '../ui/consent';
 import { fetchRole, loadSession, signIn, signOut, type Role, type Session } from './auth';
 
 // The popup is a tiny state machine. One of these is shown at a time.
@@ -21,6 +22,7 @@ const C = {
 export function Popup() {
     const [view, setView] = useState<View>({ kind: 'loading' });
     const [about, setAbout] = useState(false);
+    const acked = useAcked(); // shared first-run consent flag (boolean | undefined)
 
     // On open: restore a cached session, then resolve the tier from the backend.
     useEffect(() => {
@@ -84,14 +86,62 @@ export function Popup() {
                     BETA
                 </span>
             </div>
-            <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
-            {about && <About />}
-            <div style={S.footer}>
-                <span>Beta — early build. Know before you install.</span>
-                <button style={S.aboutToggle} onClick={() => setAbout((a) => !a)}>
-                    About {about ? '▴' : '▾'}
-                </button>
+            {acked === undefined ? (
+                <div style={S.body}>
+                    <p style={{ color: C.dim }}>…</p>
+                </div>
+            ) : !acked ? (
+                <Consent onAccept={ackConsent} />
+            ) : (
+                <>
+                    <div style={S.body}>{renderBody(view, handleSignIn, handleSignOut)}</div>
+                    {about && <About />}
+                    <div style={S.footer}>
+                        <span>Beta — early build. Know before you install.</span>
+                        <button style={S.aboutToggle} onClick={() => setAbout((a) => !a)}>
+                            About {about ? '▴' : '▾'}
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+// First-run notice: sets expectations honestly (a signal, not a guarantee) + the sandbox advice.
+function Consent({ onAccept }: { onAccept: () => void }) {
+    return (
+        <div style={S.body}>
+            <p style={{ margin: '0 0 10px', color: C.fg, fontSize: 13, lineHeight: 1.5 }}>
+                Kotiq checks a GitHub repo or npm package for risky install hooks and known issues
+                <strong> before</strong> you open or install it — an extra safety signal, right on the page.
+            </p>
+            <p style={{ margin: '0 0 10px', color: C.dim, fontSize: 12, lineHeight: 1.45 }}>
+                Currently focused on the <strong>Node.js ecosystem</strong> — npm packages and Node repos
+                on GitHub. More may follow.
+            </p>
+            <div style={S.notice}>
+                <p style={{ margin: '0 0 6px' }}>
+                    ⚠️ <strong>It's a signal, not a guarantee.</strong> Attackers keep evolving — a “safe”
+                    result can still miss something brand-new.
+                </p>
+                <p style={{ margin: 0 }}>
+                    For anything untrusted or suspicious, open or install it in an{' '}
+                    <strong>isolated environment (a VM, container or sandbox)</strong> — not on your main
+                    machine. You stay responsible for what you run.
+                </p>
             </div>
+            <p style={{ margin: '10px 0 12px', color: C.dim, fontSize: 11, lineHeight: 1.45 }}>
+                Next you'll sign in with Google (the only sign-in method) — email/profile; Kotiq sends the
+                package/repo you check to its backend. See the{' '}
+                <a href="https://kotiq.dev/privacy" target="_blank" rel="noreferrer" style={{ color: C.grey }}>
+                    privacy policy
+                </a>
+                .
+            </p>
+            <button style={S.primary} onClick={onAccept}>
+                Got it — I understand
+            </button>
         </div>
     );
 }
@@ -239,6 +289,15 @@ const S: Record<string, CSSProperties> = {
         padding: '12px 14px',
         borderTop: `1px solid ${C.border}`,
         color: C.fg,
+        fontSize: 12,
+        lineHeight: 1.45,
+    },
+    notice: {
+        background: '#1a1407',
+        border: '1px solid #3a2e0a',
+        borderRadius: 8,
+        padding: '10px 12px',
+        color: '#e8d9a8',
         fontSize: 12,
         lineHeight: 1.45,
     },
