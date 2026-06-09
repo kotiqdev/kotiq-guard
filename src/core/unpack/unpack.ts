@@ -18,6 +18,7 @@ import {
   MAX_FILES,
   MAX_HOOK_SOURCE_BYTES,
   MAX_TARBALL_BYTES,
+  MAX_TOTAL_EXTRACTED_BYTES,
   NPM_REGISTRY,
 } from '../config/configuration';
 import { HookSource, PackageManifest, PackageManifestSchema } from '../models/contracts';
@@ -157,6 +158,7 @@ async function extractAll(tarball: Buffer): Promise<ExtractedFile[]> {
     const out: ExtractedFile[] = [];
     const extractor = tarExtract();
     let count = 0;
+    let totalBytes = 0; // running total of decompressed bytes held — keeps memory bounded
     let stopped = false;
 
     extractor.on('entry', (header, stream, next) => {
@@ -187,6 +189,8 @@ async function extractAll(tarball: Buffer): Promise<ExtractedFile[]> {
       readStreamToBuffer(stream, MAX_FILE_BYTES + 1)
         .then((body) => {
           out.push({ header, relPath: rel, body });
+          totalBytes += body.length;
+          if (totalBytes > MAX_TOTAL_EXTRACTED_BYTES) stopped = true; // over budget → stop reading more
           next();
         })
         .catch((err) => {
