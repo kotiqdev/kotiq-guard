@@ -57,6 +57,13 @@ function encodeName(name: string): string {
     return encodeURIComponent(name);
 }
 
+// GitHub owner/repo path segments: word chars, dot, hyphen only. Validated before use in API paths so
+// only well-formed identifiers reach the request URL.
+const REPO_SEGMENT_RE = /^[\w.-]+$/;
+function validRepoRef(owner: string, repo: string): boolean {
+    return REPO_SEGMENT_RE.test(owner) && REPO_SEGMENT_RE.test(repo);
+}
+
 async function getJson(url: string, headers?: Record<string, string>): Promise<unknown> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
@@ -74,9 +81,24 @@ async function getText(url: string, headers?: Record<string, string>): Promise<s
     const t = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
     try {
         const res = await fetch(url, { headers, signal: ctrl.signal });
-        if (!res.ok) return null;
-        const text = await res.text();
-        return text.length > MAX_FILE_BYTES ? text.slice(0, MAX_FILE_BYTES) : text;
+        if (!res.ok || !res.body) return null;
+        // Stream with a byte cap rather than buffering the whole body, so a large response stays
+        // bounded in memory before we slice it (mirrors the tarball download path).
+        const reader = res.body.getReader();
+        const chunks: Buffer[] = [];
+        let total = 0;
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            chunks.push(Buffer.from(value));
+            total += value.byteLength;
+            if (total >= MAX_FILE_BYTES) {
+                try { await reader.cancel(); } catch { /* ignore */ }
+                break;
+            }
+        }
+        return Buffer.concat(chunks).slice(0, MAX_FILE_BYTES).toString('utf8');
     } catch {
         return null;
     } finally {
@@ -169,6 +191,7 @@ function makeReader(owner: string, repo: string, branch: string): (path: string)
 // Open a repo for reading: resolve the default branch, list files, return a passive file reader.
 // Used by the Pro AI pass to read the LIVE source the analyst needs.
 export async function openRepo(owner: string, repo: string): Promise<RepoFiles> {
+    if (!validRepoRef(owner, repo)) return { paths: [], read: async () => null };
     const meta = await getRepoMeta(owner, repo);
     const branch = meta?.defaultBranch ?? 'HEAD';
     const read = makeReader(owner, repo, branch);
@@ -189,6 +212,8 @@ export async function repoScan(owner: string, repo: string): Promise<RepoResult>
         worst: Verdict.SAFE,
         error,
     });
+
+    if (!validRepoRef(owner, repo)) return empty('invalid repo identifier');
 
     const meta = await getRepoMeta(owner, repo);
     const branch = meta?.defaultBranch ?? 'HEAD';
