@@ -52,27 +52,16 @@ async function start(): Promise<void> {
         if (req.method === 'OPTIONS') return reply.code(204).send(); // answer the preflight
     });
 
-    // Abuse guard: cap requests per identity within a window, before any heavy work. Key = verified
-    // email when a token is present (decoded, not verified — fine for a rate key), else client IP, so
-    // one noisy caller can't starve others. In-memory per instance (approximate across instances) —
-    // a per-user Firestore quota is the accurate follow-up. Tune via RATE_LIMIT_*.
+    // Coarse pre-auth throttle: per-IP request cap within a window, before any heavy work. Keyed on the
+    // client IP, not on the token's email (its signature isn't verified at this stage, so it isn't a
+    // trust source). A best-effort guard only — the heavy endpoints are separately auth-gated. The
+    // accurate, identity-bound limit is the per-user Firestore quota keyed on the VERIFIED email
+    // (post-auth) — the real follow-up. Tune via RATE_LIMIT_*.
     await app.register(rateLimit, {
         max: env.rateLimitMax,
         timeWindow: env.rateLimitWindowMs,
         allowList: (req) => req.method === 'OPTIONS' || req.url === '/health',
-        keyGenerator: (req) => {
-            const header = req.headers.authorization ?? '';
-            const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-            if (token) {
-                try {
-                    const id = decodeIdTokenUnverified(token);
-                    if (id.email) return `u:${id.email.toLowerCase()}`;
-                } catch {
-                    /* malformed token → fall through to IP */
-                }
-            }
-            return `ip:${req.ip}`;
-        },
+        keyGenerator: (req) => `ip:${req.ip}`,
     });
 
     // Auth gate. When enabled, every request (except /health and CORS preflight) must carry a

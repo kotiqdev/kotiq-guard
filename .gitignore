@@ -12,6 +12,8 @@ dist/
 # packaged extension (store upload artifacts)
 *.zip
 apps/extension/builds/
+# …but DO track the committed reviewer test build
+!release/kotiq-guard-extension.zip
 
 # store screenshots + recipe — local-only, regenerable marketing assets
 apps/extension/screenshots/

@@ -46,11 +46,40 @@ const GuardState = Annotation.Root({
 
 type State = typeof GuardState.State;
 
-// Render the readable hook script sources (or note that none were shipped).
+// Render the readable hook script sources within a total char budget (per-source + total caps). Each
+// rendered source can be fed to the model several times (security ⇄ critic retries), so we bound the
+// total content fed in. Per-file size is already capped upstream (MAX_HOOK_SOURCE_BYTES).
+const SOURCES_BUDGET = 24_000; // total chars of hook source fed to the model
+const SOURCE_CAP = 4_000; // per-source cap before truncation
 function renderSources(sources: HookSource[]): string {
-    return sources.length
-        ? sources.map((s) => `--- ${s.path} ---\n${s.content}`).join('\n\n')
-        : '(none of the hook scripts were shipped in the package, so we could NOT read them)';
+    if (!sources.length) {
+        return '(none of the hook scripts were shipped in the package, so we could NOT read them)';
+    }
+    const out: string[] = [];
+    let used = 0;
+    for (let i = 0; i < sources.length; i++) {
+        if (used >= SOURCES_BUDGET) {
+            const left = sources.length - i;
+            out.push(`… (${left} more hook source${left > 1 ? 's' : ''} omitted)`);
+            break;
+        }
+        const s = sources[i];
+        const body = s.content.length > SOURCE_CAP ? `${s.content.slice(0, SOURCE_CAP)}\n… (truncated)` : s.content;
+        out.push(`--- ${s.path} ---\n${body}`);
+        used += body.length;
+    }
+    return out.join('\n\n');
+}
+
+// Cap each hook COMMAND before it goes into a prompt. A single hook command can be large (it's only
+// bounded by the package.json size cap), and the rendered hooks are fed to the model several times —
+// so bound each value too, same idea as SOURCE_CAP for the script sources.
+function capHooks(hooks: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [name, cmd] of Object.entries(hooks)) {
+        out[name] = cmd.length > SOURCE_CAP ? `${cmd.slice(0, SOURCE_CAP)}… (truncated)` : cmd;
+    }
+    return out;
 }
 
 // Pull the first {...} JSON object out of a possibly <think>-wrapped / prose-padded LLM reply.
@@ -98,7 +127,7 @@ async function securityNode(state: State, config?: RunnableConfig): Promise<Part
 
     const prompt = render(agents.security.prompt, {
         packageName: state.packageName,
-        hooks: JSON.stringify(hooks, null, 2),
+        hooks: JSON.stringify(capHooks(hooks), null, 2),
         sources: renderSources(sources),
         retryNote,
     });
@@ -121,7 +150,7 @@ async function criticNode(state: State, config?: RunnableConfig): Promise<Partia
     if (Object.keys(hooks).length === 0) return { criticPass: true };
 
     const prompt = render(agents.critic.prompt, {
-        hooks: JSON.stringify(hooks, null, 2),
+        hooks: JSON.stringify(capHooks(hooks), null, 2),
         sources: renderSources(state.hookSources ?? []),
         securityLevel: String(state.securityLevel),
         securityNote: String(state.securityNote),
@@ -184,7 +213,7 @@ async function explainNode(state: State, config?: RunnableConfig): Promise<Parti
     const escalated = effective !== v.verdict;
 
     const hooksLine = Object.keys(hooks).length
-        ? `Install hooks it declares: ${JSON.stringify(hooks)}. Kotiq ${
+        ? `Install hooks it declares: ${JSON.stringify(capHooks(hooks))}. Kotiq ${
               sources.length
                   ? `READ the source of these hook scripts: ${sources.map((s) => s.path).join(', ')}`
                   : 'could NOT read any hook script source (none were shipped in the package)'

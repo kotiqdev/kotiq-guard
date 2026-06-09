@@ -16,4 +16,7 @@ export const HTTP_TIMEOUT_MS = 10_000;
 export const MAX_TARBALL_BYTES = 25 * 1024 * 1024; // refuse to download a larger (compressed) tarball
 export const MAX_FILES = 5_000; // cap on members enumerated from the archive
 export const MAX_FILE_BYTES = 2 * 1024 * 1024; // skip reading any single file larger than this
+// Running cap on TOTAL decompressed bytes held in memory — the per-file and per-count caps alone
+// multiply to a large bound, so this keeps overall memory predictable on adversarial archives.
+export const MAX_TOTAL_EXTRACTED_BYTES = 128 * 1024 * 1024;
 export const MAX_HOOK_SOURCE_BYTES = 64 * 1024; // cap on hook-source text attached to the manifest
