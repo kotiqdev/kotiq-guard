@@ -4,9 +4,11 @@ import { REQUIRE_AUTH } from '../config';
 import type { LiteResult } from '../lite/engine';
 import { loadSession, SESSION_KEY, type Session } from '../session';
 import { AiBlock } from '../ui/AiBlock';
+import { ConsentGate, useAcked } from '../ui/consent';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
-import { badgePill, dropdownPanel, panel, pillName, sectionLabel, VERDICT_COLOR } from '../ui/theme';
+import { Spinner } from '../ui/primitives';
+import { badgePill, dropdownPanel, panel, pillName, sectionLabel, SEV_COLOR, VERDICT_COLOR } from '../ui/theme';
 
 type ScanResult = {
     verdict: string;
@@ -16,6 +18,9 @@ type ScanResult = {
     scanned_version?: string | null;
     scripts?: { hooks?: Record<string, string>; readable?: string[] };
     security?: { level?: string; note?: string };
+    // Deterministic reasons behind the verdict (surfaced so the user sees WHY without the AI).
+    top_findings?: { severity?: string; title?: string; explanation?: string; file?: string | null }[];
+    reputation?: { source?: string; severity?: string; summary?: string }[];
 };
 
 // The exact version the user is viewing — ONLY from the /v/<version> URL. We deliberately do NOT read
@@ -100,6 +105,7 @@ export function Badge() {
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
     const [lite, setLite] = useState(false); // true when the backend says we're not allow-listed (403)
+    const acked = useAcked(); // first-run consent gate (must accept before any scan)
 
     useEffect(() => {
         void loadSession().then((s) => setSession(s));
@@ -146,7 +152,7 @@ export function Badge() {
     }, []);
 
     useEffect(() => {
-        if (!pkg || session === undefined) return; // wait until we know the session
+        if (acked !== true || !pkg || session === undefined) return; // consent + session first
         if (REQUIRE_AUTH && !session) return; // not signed in → never touch the cloud
         let cancelled = false; // a newer scan / navigation supersedes this one
         // Go through the background worker: content scripts can't reach localhost (Chrome blocks
@@ -166,7 +172,7 @@ export function Badge() {
         return () => {
             cancelled = true;
         };
-    }, [pkg, session]);
+    }, [acked, pkg, session]);
 
     // Ask the background worker to run the Google sign-in flow (content scripts can't do it).
     async function doSignIn() {
@@ -193,19 +199,31 @@ export function Badge() {
     }
 
     if (!pkg) return null;
+    if (acked === undefined) return null; // waiting on the consent flag
+    if (!acked) return <ConsentGate />; // must acknowledge before scanning
     if (REQUIRE_AUTH && session === null) {
         return (
             <SignInBadge
                 onSignIn={doSignIn}
                 busy={authBusy}
                 error={authError}
-                label="Sign in to scan"
-                title="Sign in with Google to scan this package"
+                label="Sign in with Google"
+                title="Sign in with Google (the only sign-in method) to scan this package"
             />
         );
     }
     if (lite) return <LiteBadge pkg={pkg} pageVersion={pageVersion} />;
-    if (!data) return null;
+    if (!data) {
+        // Immediate feedback while the scan runs (otherwise the badge would silently appear late).
+        return (
+            <Dock status={{ busy: true }}>
+                <div style={{ ...badgePill('#6e7781', 'default'), display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Spinner size={13} color="#ffffff" />
+                    <span style={pillName}>{pkgNameFromSpec(pkg)}</span> · scanning…
+                </div>
+            </Dock>
+        );
+    }
 
     // Badge reflects the effective verdict (security can escalate it once we've run the agents).
     const shown = full?.effective_verdict ?? data.verdict;
@@ -219,6 +237,8 @@ export function Badge() {
     const hookNames = scripts?.hooks ? Object.keys(scripts.hooks) : [];
     const readable = scripts?.readable ?? [];
     const sec = full?.security;
+    const findings = (full ?? data).top_findings ?? [];
+    const reputation = (full ?? data).reputation ?? [];
 
     async function explain() {
         setLoading(true);
@@ -292,6 +312,31 @@ export function Badge() {
                             onCancel={cancel}
                         />
                     </div>
+
+                    {/* Why this verdict — deterministic findings + OSINT signals (shown without the AI) */}
+                    {(findings.length > 0 || reputation.length > 0) && (
+                        <div style={{ ...panel, color: '#57606a' }}>
+                            <div style={sectionLabel}>Why this verdict</div>
+                            {findings.map((f, i) => (
+                                <div key={`f${i}`} style={{ marginTop: i ? 6 : 0 }}>
+                                    <span style={{ color: SEV_COLOR[f.severity ?? ''] ?? '#6e7781', fontWeight: 700, fontSize: 11 }}>
+                                        {(f.severity ?? '').toUpperCase()}
+                                    </span>{' '}
+                                    {f.title}
+                                    {f.explanation && <div style={{ fontSize: 12, color: '#8a929b', marginTop: 1 }}>{f.explanation}</div>}
+                                </div>
+                            ))}
+                            {reputation.map((r, i) => (
+                                <div key={`r${i}`} style={{ marginTop: findings.length || i ? 6 : 0 }}>
+                                    <span style={{ color: SEV_COLOR[r.severity ?? ''] ?? '#6e7781', fontWeight: 700, fontSize: 11 }}>
+                                        {(r.severity ?? '').toUpperCase()}
+                                    </span>{' '}
+                                    {r.summary}
+                                    {r.source && <span style={{ fontSize: 11, color: '#8a929b' }}> · {r.source}</span>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* What Kotiq checked (from the instant deterministic scan) */}
                     <div style={{ ...panel, color: '#57606a' }}>

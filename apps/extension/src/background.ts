@@ -16,7 +16,8 @@ type Msg =
     | { type: 'cancel' }
     | { type: 'liteScan'; pkg: string }
     | { type: 'repoScan'; owner: string; repo: string }
-    | { type: 'repoExplain'; owner: string; repo: string };
+    | { type: 'repoExplain'; owner: string; repo: string }
+    | { type: 'openPopup' };
 
 let explainAbort: AbortController | null = null;
 let explainRid: string | null = null; // id of the in-flight LLM request, for explicit server-side cancel
@@ -112,6 +113,17 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
                     }
                     break;
                 }
+                case 'openPopup':
+                    // Open the extension popup (where the user reads the notice + signs in). Content
+                    // scripts can't do this; only this privileged context can. Not supported on every
+                    // Chrome version → the badge also shows a "click the toolbar icon" fallback hint.
+                    try {
+                        await chrome.action.openPopup();
+                        sendResponse({ ok: true });
+                    } catch (e) {
+                        sendResponse({ ok: false, error: (e as Error).message });
+                    }
+                    break;
                 default:
                     sendResponse({ ok: false, error: 'unknown message' });
             }
