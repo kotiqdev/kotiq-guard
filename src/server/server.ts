@@ -52,10 +52,11 @@ async function start(): Promise<void> {
         if (req.method === 'OPTIONS') return reply.code(204).send(); // answer the preflight
     });
 
-    // Abuse guard: cap requests per client IP within a window, before auth/heavy work. We key on IP,
-    // not on the token's email — the token's signature isn't verified at this stage (that happens in the
-    // auth hook below), so its claims aren't a trust source here. In-memory per instance; a per-user
-    // Firestore quota keyed on the verified email is the accurate follow-up. Tune via RATE_LIMIT_*.
+    // Coarse pre-auth throttle: per-IP request cap within a window, before any heavy work. Keyed on the
+    // client IP, not on the token's email (its signature isn't verified at this stage, so it isn't a
+    // trust source). A best-effort guard only — the heavy endpoints are separately auth-gated. The
+    // accurate, identity-bound limit is the per-user Firestore quota keyed on the VERIFIED email
+    // (post-auth) — the real follow-up. Tune via RATE_LIMIT_*.
     await app.register(rateLimit, {
         max: env.rateLimitMax,
         timeWindow: env.rateLimitWindowMs,

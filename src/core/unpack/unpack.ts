@@ -194,7 +194,9 @@ async function extractAll(tarball: Buffer): Promise<ExtractedFile[]> {
           next();
         })
         .catch((err) => {
-          // Swallow individual member read errors; missing content just means we can't analyse it.
+          // A member read error aborts the whole unpack (next(err) → extractor 'error' → reject):
+          // fail-closed, so the package gets a cautious/error verdict instead of a partial scan that
+          // could silently skip — and miss — a malicious file.
           next(err);
         });
     });
