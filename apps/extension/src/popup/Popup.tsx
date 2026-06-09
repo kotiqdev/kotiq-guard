@@ -132,8 +132,8 @@ function Consent({ onAccept }: { onAccept: () => void }) {
                 </p>
             </div>
             <p style={{ margin: '10px 0 12px', color: C.dim, fontSize: 11, lineHeight: 1.45 }}>
-                Sign-in uses your Google email/profile; Kotiq sends the package/repo you check to its
-                backend. See the{' '}
+                Next you'll sign in with Google (the only sign-in method) — email/profile; Kotiq sends the
+                package/repo you check to its backend. See the{' '}
                 <a href="https://kotiq.dev/privacy" target="_blank" rel="noreferrer" style={{ color: C.grey }}>
                     privacy policy
                 </a>

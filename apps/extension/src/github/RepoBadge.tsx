@@ -6,6 +6,7 @@ import { loadSession, SESSION_KEY, type Session } from '../session';
 import { ConsentGate, useAcked } from '../ui/consent';
 import { Dock } from '../ui/Dock';
 import { SignInBadge } from '../ui/SignInBadge';
+import { Spinner } from '../ui/primitives';
 import { badgePill, dropdownPanel, pillName, VERDICT_COLOR } from '../ui/theme';
 import { AiAnalysis } from './AiAnalysis';
 import { RepoFindings } from './RepoFindings';
@@ -31,6 +32,7 @@ export function RepoBadge() {
     const [authBusy, setAuthBusy] = useState(false);
     const [result, setResult] = useState<RepoResult | null>(null);
     const [open, setOpen] = useState(false);
+    const [scanning, setScanning] = useState(false);
     const [aiBusy, setAiBusy] = useState(false); // AI explain running → collapsed Dock shows a spinner
     const acked = useAcked(); // first-run consent gate (must accept before any scan)
 
@@ -75,6 +77,7 @@ export function RepoBadge() {
         if (acked !== true || !target || session === undefined) return; // consent + session first
         if (REQUIRE_AUTH && !session) return; // need sign-in first
         let cancelled = false; // a newer scan / navigation supersedes this one
+        setScanning(true);
         void chrome.runtime
             .sendMessage({ type: 'repoScan', owner: target.owner, repo: target.repo })
             .then((r: { status?: number; result?: RepoResult }) => {
@@ -84,6 +87,9 @@ export function RepoBadge() {
             })
             .catch(() => {
                 if (!cancelled) setResult(null);
+            })
+            .finally(() => {
+                if (!cancelled) setScanning(false);
             });
         return () => {
             cancelled = true;
@@ -109,15 +115,26 @@ export function RepoBadge() {
             <SignInBadge
                 onSignIn={doSignIn}
                 busy={authBusy}
-                label="Sign in to scan deps"
-                title="Sign in with Google to scan this repo's dependencies"
+                label="Sign in with Google"
+                title="Sign in with Google (the only sign-in method) to scan this repo's dependencies"
             />
         );
     }
 
-    // Show nothing until we have a positive result (consistent with the npm badge). Avoids a
-    // "scanning…" badge that would flash then vanish on repos with no (root) Node manifest — e.g.
-    // tutorial/monorepo layouts. A proper verdict for those comes with the recursive manifest scan.
+    // Immediate feedback while the (multi-second) repo scan runs.
+    if (scanning && !result) {
+        return (
+            <Dock status={{ busy: true }}>
+                <div style={{ ...badgePill('#6e7781', 'default'), display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Spinner size={13} color="#ffffff" />
+                    <span style={pillName}>{target.repo}</span> · scanning…
+                </div>
+            </Dock>
+        );
+    }
+
+    // Repos with no (root) Node manifest → nothing to assess yet (a proper verdict for nested
+    // manifests comes with the recursive scan). Brief scanning→hidden here is acceptable.
     if (!result || !result.found) return null;
 
     const color = VERDICT_COLOR[result.worst] ?? '#6e7781';
@@ -135,7 +152,7 @@ export function RepoBadge() {
 
             {open && (
                 <div style={{ ...dropdownPanel, width: 360, maxHeight: '70vh', overflowY: 'auto' }}>
-                    {result.worst !== 'SAFE' && <AiAnalysis owner={target.owner} repo={target.repo} onBusy={setAiBusy} />}
+                    <AiAnalysis owner={target.owner} repo={target.repo} onBusy={setAiBusy} />
                     <RepoFindings result={result} />
                 </div>
             )}

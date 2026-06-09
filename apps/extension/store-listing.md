@@ -7,7 +7,7 @@
 Kotiq Guard — is this npm package safe to install?
 
 ## Summary / short description (max 132 chars)
-Checks an npm package or GitHub repo for risky install hooks and dependencies — before you install or open it.
+Check npm packages & GitHub repos for malware, risky install hooks & vulnerabilities — AI insights, right on the page.
 
 ## Category
 Developer Tools
@@ -18,22 +18,24 @@ English
 ## Detailed description
 Kotiq Guard answers one question: **is this npm package or GitHub repository safe to install or open — before you run it?**
 
-Supply-chain attacks hide in the code that runs *during* `npm install` (install hooks) and in dependencies you never chose directly. Kotiq checks those for you and shows a clear verdict right on the page, so you can decide before anything executes on your machine.
+Supply-chain attacks hide in the code that runs *during* `npm install` (install hooks) and in dependencies you never chose. Kotiq checks for them and shows a clear verdict right on the page — before anything executes on your machine.
 
-What you get:
-• A safety verdict badge on npmjs.com package pages and on GitHub repositories.
-• A look at the install hooks a package declares and what its dependencies bring in.
-• A plain-language explanation of *why* something is risky (Pro) — grounded in the actual findings, written by an AI analyst with a reviewer step to keep it honest.
-• Fast, deterministic checks first; the AI layer only adds explanation on top.
+KEY FEATURES
+🔍 Pre-install scan — flags risky install hooks (preinstall/postinstall), risky dependencies, and known vulnerabilities.
+🐾 More than CVEs — catches hidden malware, typosquats, and malicious scripts, not just audit advisories.
+🧠 AI explainer (Pro — limited early access) — turns the findings into plain, actionable language; an analyst⇄reviewer step keeps it honest.
+🔒 Never executes code — static inspection of package.json, scripts and project structure; your machine stays untouched.
+🌐 Works in place — instantly on npmjs.com package pages and GitHub repositories.
 
-Kotiq is built to be trustworthy: the verdict comes from a deterministic engine, and the AI can only raise concern, never hide it.
+Trustworthy by design: the verdict comes from a deterministic engine; the AI can only raise concern, never hide it.
 
 Scope: Kotiq currently focuses on the Node.js ecosystem — npm packages and Node projects on GitHub. Support for other ecosystems may follow.
 
-Free (Lite): the deterministic safety verdict.
-Pro: the AI explanation layer.
+Kotiq Guard is in beta. The safety verdict is free for everyone; the AI explanation layer (Pro) is in limited early access while we expand — you can request access from the extension. Tiers and pricing may change.
 
-Kotiq Guard is an independent security project. It reads the package/repo you’re viewing — it does not track your browsing.
+Kotiq Guard is an independent security project. It reads the package/repo page you’re viewing — it does not track your browsing.
+
+Stop guessing — know before you install.
 
 ## Single purpose (required)
 Kotiq Guard shows a safety verdict for the npm package or GitHub repository you are viewing — by checking its install hooks and dependencies — so you can judge whether it is safe to install or open before you run it.

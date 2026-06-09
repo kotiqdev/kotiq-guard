@@ -27,47 +27,27 @@ export function ackConsent(): void {
     void chrome.storage.local.set({ [ACK_KEY]: true });
 }
 
-// On-page gate: shown by the npm/GitHub badges until the user acknowledges. Open by default so the
-// disclaimer is visible; "Got it" sets the shared flag → the badge re-renders and starts scanning.
+// On-page gate: shown by the npm/GitHub badges until the user acknowledges. The badge does NOT confirm
+// consent itself — it just opens the extension popup (where the user reads the notice + taps "Got it").
+// Once acknowledged there, the shared flag flips and the badge unlocks (live, via useAcked). Opening
+// the popup needs the privileged context, so we ask the background; if that's unavailable on this
+// Chrome version, the dropdown tells the user to click the toolbar icon instead.
 export function ConsentGate() {
-    const [open, setOpen] = useState(true);
+    const [hint, setHint] = useState(false);
+    function openExtension(): void {
+        void chrome.runtime.sendMessage({ type: 'openPopup' }).catch(() => undefined);
+        setHint(true);
+    }
     return (
         <Dock>
-            <div onClick={() => setOpen((o) => !o)} style={badgePill('#6e7781')}>
-                🐾 Kotiq — read before scanning
+            <div onClick={openExtension} style={badgePill('#6e7781')} title="Open Kotiq to get started">
+                🐾 Kotiq — tap to set up
             </div>
-            {open && (
-                <div style={{ ...dropdownPanel, width: 300, overflow: 'hidden' }}>
+            {hint && (
+                <div style={{ ...dropdownPanel, width: 270, overflow: 'hidden' }}>
                     <div style={{ ...panel, color: '#57606a', lineHeight: 1.5 }}>
-                        <b>A signal, not a guarantee.</b> Attackers keep evolving — a “safe” result can
-                        still miss something brand-new. For anything untrusted or suspicious, open or
-                        install it in an <b>isolated environment (a VM, container or sandbox)</b> — not on
-                        your main machine. You stay responsible for what you run.
-                        <div style={{ marginTop: 8, fontSize: 11, color: '#8a929b' }}>
-                            Currently focused on the Node.js ecosystem. Sign-in uses your Google profile;
-                            Kotiq sends the package/repo you check to its backend.{' '}
-                            <a href="https://kotiq.dev/privacy" target="_blank" rel="noreferrer" style={{ color: '#57606a' }}>
-                                Privacy
-                            </a>
-                            .
-                        </div>
-                    </div>
-                    <div style={{ padding: '10px 12px' }}>
-                        <button
-                            onClick={ackConsent}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                border: 'none',
-                                borderRadius: 8,
-                                background: '#1a7f37',
-                                color: '#fff',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            Got it — start scanning
-                        </button>
+                        Open the <b>Kotiq</b> icon in your browser toolbar (top-right ↗) and tap{' '}
+                        <b>Got it</b> to read the notice and enable scanning.
                     </div>
                 </div>
             )}
