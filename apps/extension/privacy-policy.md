@@ -39,7 +39,9 @@ currently being viewed.
 Some users may have access to AI-generated explanations as part of beta testing or future premium
 features. For users with access to AI-generated explanations, the scan findings and metadata related
 to the package or repository being analyzed may be sent to Google Vertex AI to generate the
-explanation. We do not send your Google account data to it.
+explanation. We do not send your Google account data to it. These AI requests may also be logged to
+LangSmith (by LangChain) so we can monitor, debug, and improve the AI feature; those traces can
+include the package/repository identifier and the analysis content, but not your Google account data.
 
 ## Third-party services
 
@@ -47,6 +49,7 @@ The service relies on the following third parties, each with its own privacy pol
 
 - **Google Identity Services** — authentication (sign-in).
 - **Google Vertex AI** — optional AI-generated explanations.
+- **LangSmith (LangChain)** — tracing/observability for the AI explanation feature.
 - **npm Registry** — public package metadata.
 - **GitHub** — public repository information.
 
